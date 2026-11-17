@@ -1,0 +1,262 @@
+[
+  {
+    "host": "adult.example",
+    "type": "A",
+    "tcp": false,
+    "rcode": "NXDOMAIN",
+    "records": [],
+    "pass": true
+  },
+  {
+    "host": "pornhub.com",
+    "type": "AAAA",
+    "tcp": true,
+    "rcode": "NXDOMAIN",
+    "records": [],
+    "pass": true
+  },
+  {
+    "host": "www.google.com",
+    "type": "A",
+    "tcp": false,
+    "rcode": "NOERROR",
+    "records": [
+      {
+        "type": "CNAME",
+        "value": "forcesafesearch.google.com."
+      },
+      {
+        "type": "A",
+        "value": "216.239.38.120"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "host": "www.google.com",
+    "type": "AAAA",
+    "tcp": false,
+    "rcode": "NOERROR",
+    "records": [
+      {
+        "type": "CNAME",
+        "value": "forcesafesearch.google.com."
+      },
+      {
+        "type": "AAAA",
+        "value": "2001:4860:4802:32::78"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "host": "www.bing.com",
+    "type": "A",
+    "tcp": false,
+    "rcode": "NOERROR",
+    "records": [
+      {
+        "type": "CNAME",
+        "value": "strict.bing.com."
+      },
+      {
+        "type": "CNAME",
+        "value": "strict-bing-com.ax-0007.ax-msedge.net."
+      },
+      {
+        "type": "CNAME",
+        "value": "ax-0007.ax-msedge.net."
+      },
+      {
+        "type": "A",
+        "value": "150.171.27.16"
+      },
+      {
+        "type": "A",
+        "value": "150.171.28.16"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "host": "duckduckgo.com",
+    "type": "A",
+    "tcp": false,
+    "rcode": "NOERROR",
+    "records": [
+      {
+        "type": "CNAME",
+        "value": "safe.duckduckgo.com."
+      },
+      {
+        "type": "A",
+        "value": "40.89.244.237"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "host": "github.com",
+    "type": "A",
+    "tcp": false,
+    "rcode": "NOERROR",
+    "records": [
+      {
+        "type": "A",
+        "value": "140.82.112.3"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "host": "registry.npmjs.org",
+    "type": "A",
+    "tcp": false,
+    "rcode": "NOERROR",
+    "records": [
+      {
+        "type": "A",
+        "value": "104.16.9.34"
+      },
+      {
+        "type": "A",
+        "value": "104.16.3.34"
+      },
+      {
+        "type": "A",
+        "value": "104.16.8.34"
+      },
+      {
+        "type": "A",
+        "value": "104.16.7.34"
+      },
+      {
+        "type": "A",
+        "value": "104.16.4.34"
+      },
+      {
+        "type": "A",
+        "value": "104.16.2.34"
+      },
+      {
+        "type": "A",
+        "value": "104.16.1.34"
+      },
+      {
+        "type": "A",
+        "value": "104.16.10.34"
+      },
+      {
+        "type": "A",
+        "value": "104.16.5.34"
+      },
+      {
+        "type": "A",
+        "value": "104.16.0.34"
+      },
+      {
+        "type": "A",
+        "value": "104.16.6.34"
+      },
+      {
+        "type": "A",
+        "value": "104.16.11.34"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "host": "pypi.org",
+    "type": "A",
+    "tcp": true,
+    "rcode": "NOERROR",
+    "records": [
+      {
+        "type": "A",
+        "value": "151.101.0.223"
+      },
+      {
+        "type": "A",
+        "value": "151.101.64.223"
+      },
+      {
+        "type": "A",
+        "value": "151.101.128.223"
+      },
+      {
+        "type": "A",
+        "value": "151.101.192.223"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "host": "registry-1.docker.io",
+    "type": "AAAA",
+    "tcp": false,
+    "rcode": "NOERROR",
+    "records": [
+      {
+        "type": "AAAA",
+        "value": "2600:1f18:2148:bc00:6828:e511:d4db:1226"
+      },
+      {
+        "type": "AAAA",
+        "value": "2600:1f18:2148:bc02:f6fb:a142:48de:2bc7"
+      },
+      {
+        "type": "AAAA",
+        "value": "2600:1f18:2148:bc02:1da:368e:d5e:d700"
+      },
+      {
+        "type": "AAAA",
+        "value": "2600:1f18:2148:bc02:b22a:da3e:2ca:ca73"
+      },
+      {
+        "type": "AAAA",
+        "value": "2600:1f18:2148:bc02:90e0:fd4b:e16:9f7a"
+      },
+      {
+        "type": "AAAA",
+        "value": "2600:1f18:2148:bc00:cfa9:eb18:f305:65f3"
+      },
+      {
+        "type": "AAAA",
+        "value": "2600:1f18:2148:bc00:9532:aa6b:353d:e6c3"
+      },
+      {
+        "type": "AAAA",
+        "value": "2600:1f18:2148:bc02:1914:f73c:c9ac:dc20"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "host": "www.google.com",
+    "probe": "HTTPS_HEAD",
+    "http_and_tls": "200 0",
+    "pass": true,
+    "error": ""
+  },
+  {
+    "host": "github.com",
+    "probe": "HTTPS_HEAD",
+    "http_and_tls": "200 0",
+    "pass": true,
+    "error": ""
+  },
+  {
+    "host": "registry.npmjs.org",
+    "probe": "HTTPS_HEAD",
+    "http_and_tls": "200 0",
+    "pass": true,
+    "error": ""
+  },
+  {
+    "host": "pypi.org",
+    "probe": "HTTPS_HEAD",
+    "http_and_tls": "200 0",
+    "pass": true,
+    "error": ""
+  }
+]

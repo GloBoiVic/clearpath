@@ -1,0 +1,13 @@
+{
+  "policies": {
+    "DNSOverHTTPS": {"Enabled": false, "Locked": true},
+    "WebsiteFilter": {
+      "Block": [
+        "*://adult.example/*",
+        "*://*.adult.example/*",
+        "*://blocked.example/*",
+        "*://*.blocked.example/*"
+      ]
+    }
+  }
+}
