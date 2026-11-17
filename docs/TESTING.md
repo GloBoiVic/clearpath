@@ -1,5 +1,7 @@
 # Test procedures and safe rollback
 
+> This document preserves the initial Python/high-port experiment procedure. For the implemented native extension, use [native build/install/rollback](../native/README.md) and [native VM validation](native/VM_VALIDATION.md). The relay below is unnecessary for the native provider and was not installed on the host.
+
 ## Tests safe to run in this workspace
 
 ```sh

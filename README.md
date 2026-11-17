@@ -1,10 +1,19 @@
-# Clearpath foundation experiment
+# Clearpath filtering foundation
 
-**Decision:** build a small independent policy core; investigate a native macOS DNS Proxy system extension plus explicit browser policies as the product foundation. Do not fork distraction-free's resolver or installer. DNS filtering works when requests reach it; arbitrary encrypted DNS, proxies, VPNs and a willing administrator remain bypasses. Cross-browser protection is **not yet validated**.
+**Current status:** a Swift macOS DNS Proxy system extension, native policy/DNS engine, activation/deactivation control command, removable browser policy generator, and isolated tests are implemented. **The extension has not been activated; cross-browser protection, reboot persistence and real-system rollback are not yet validated.** Signing/entitlement prerequisites remain missing in this environment. See [native implementation and safe deployment](native/README.md) and [current evidence](docs/native/RESULTS.md).
 
-This repository contains an isolated Python DNS proof of concept, automated tests, upstream bug reproductions, inert browser-policy examples, and an engineering assessment. No UI or accountability system is implemented. Nothing here installs a service, edits system DNS, changes Screen Time, installs certificates, or removes administrator access.
+The original Python DNS experiment, working policy behavior, upstream reproductions and initial research are preserved. The native implementation builds on the independent-core/DNS-Proxy/browser-policy decision. No full UI, accountability partner or recovery system is implemented. No system networking, Screen Time, browser configuration or privileged service on the development Mac was changed. The native activation commands can change configuration only when explicitly invoked from an installed signed app; do not run them on an everyday Mac without authorization.
 
-## Run locally
+## Native build — no activation
+
+```sh
+swift test --package-path native --scratch-path artifacts/native-build
+swift build --package-path native --scratch-path artifacts/native-build -c release
+```
+
+Requires macOS 15+ and Xcode 16+. [Native instructions](native/README.md) cover workspace-only packaging, Developer ID profiles, read-only prerequisite checks, explicit probes, browser policy generation and VM-only activation/rollback. The [VM acceptance checklist](docs/native/VM_VALIDATION.md) distinguishes completed isolated tests from unperformed runtime/browser tests.
+
+## Original Python experiment
 
 Python 3.9+ and a virtual environment are required; macOS does not guarantee a bundled Python. Python is an experiment harness, not the proposed shipping runtime.
 

@@ -1,5 +1,7 @@
 # Technical foundation assessment — 2026-11-17
 
+> Initial experiment record. The recommended native architecture has now been implemented but not activated. See [native architecture and operations](../native/README.md) and [current validation evidence](native/RESULTS.md). References below to an unimplemented provider describe the initial experiment, not the current source tree.
+
 ## Decision and acceptance boundary
 
 Use local domain policy, provider-supported SafeSearch DNS aliases, and explicit browser configuration. A **Swift `NEDNSProxyProvider` system extension** is the preferred next deployment experiment: it avoids replacing each network service's DNS settings and does not require owning a loopback port 53 or a full VPN tunnel. This is a conditional architecture decision, not a claim that the extension has been built or activated.

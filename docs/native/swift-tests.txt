@@ -1,0 +1,105 @@
+Building for debugging...
+[1 / 3]
+[2 / 4] ClearpathCore
+[4 / 6] ClearpathCore
+[11 / 13] ClearpathNetwork
+[17 / 19] ClearpathDNSProxy-product
+[19 / 21] ClearpathDNSProxy-product
+[21 / 24] ClearpathNetwork
+[24 / 24] ClearpathDNSProxy-product
+[28 / 30] clearpathctl-product
+[30 / 30] clearpathctl-product
+[32 / 38] ClearpathCoreTests-product
+[34 / 40] ClearpathCoreTests-product
+[38 / 42] ClearpathCoreTests-product
+[40 / 42] ClearpathCoreTests-product
+Build complete! (2.86 sec)
+Test Suite 'All tests' started at 2026-11-17 16:50:32.037.
+Test Suite 'ClearpathCoreTests.xctest' started at 2026-11-17 16:50:32.038.
+Test Suite 'LifecycleTests' started at 2026-11-17 16:50:32.038.
+Test Case '-[ClearpathCoreTests.LifecycleTests testActivateAndIdempotentRetry]' started.
+Test Case '-[ClearpathCoreTests.LifecycleTests testActivateAndIdempotentRetry]' passed (0.002 seconds).
+Test Case '-[ClearpathCoreTests.LifecycleTests testFailedFirstSaveRemovesOnlyNewConfig]' started.
+Test Case '-[ClearpathCoreTests.LifecycleTests testFailedFirstSaveRemovesOnlyNewConfig]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.LifecycleTests testFailedSaveRestoresOriginal]' started.
+Test Case '-[ClearpathCoreTests.LifecycleTests testFailedSaveRestoresOriginal]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.LifecycleTests testForeignConfigNeverModified]' started.
+Test Case '-[ClearpathCoreTests.LifecycleTests testForeignConfigNeverModified]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.LifecycleTests testPolicyUpdateRequiresDeactivation]' started.
+Test Case '-[ClearpathCoreTests.LifecycleTests testPolicyUpdateRequiresDeactivation]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.LifecycleTests testRebootRequiredDoesNotEnablePreferences]' started.
+Test Case '-[ClearpathCoreTests.LifecycleTests testRebootRequiredDoesNotEnablePreferences]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.LifecycleTests testRollbackDoesNotOverwriteConcurrentChange]' started.
+Test Case '-[ClearpathCoreTests.LifecycleTests testRollbackDoesNotOverwriteConcurrentChange]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.LifecycleTests testRollbackFailureReported]' started.
+Test Case '-[ClearpathCoreTests.LifecycleTests testRollbackFailureReported]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.LifecycleTests testUninstallOrderAndIdempotence]' started.
+Test Case '-[ClearpathCoreTests.LifecycleTests testUninstallOrderAndIdempotence]' passed (0.000 seconds).
+Test Suite 'LifecycleTests' passed at 2026-11-17 16:50:32.045.
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.007 (0.007) seconds
+Test Suite 'PolicyTests' started at 2026-11-17 16:50:32.045.
+Test Case '-[ClearpathCoreTests.PolicyTests testDigestMatchesReference]' started.
+Test Case '-[ClearpathCoreTests.PolicyTests testDigestMatchesReference]' passed (0.000 seconds).
+Test Case '-[ClearpathCoreTests.PolicyTests testIDNAAndDomainValidation]' started.
+Test Case '-[ClearpathCoreTests.PolicyTests testIDNAAndDomainValidation]' passed (0.000 seconds).
+Test Case '-[ClearpathCoreTests.PolicyTests testPrecedence]' started.
+Test Case '-[ClearpathCoreTests.PolicyTests testPrecedence]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.PolicyTests testRejectAmbiguousJSONAndConflicts]' started.
+Test Case '-[ClearpathCoreTests.PolicyTests testRejectAmbiguousJSONAndConflicts]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.PolicyTests testSharedPythonCorpus]' started.
+Test Case '-[ClearpathCoreTests.PolicyTests testSharedPythonCorpus]' passed (0.001 seconds).
+Test Suite 'PolicyTests' passed at 2026-11-17 16:50:32.048.
+	 Executed 5 tests, with 0 failures (0 unexpected) in 0.003 (0.003) seconds
+Test Suite 'ResolverTests' started at 2026-11-17 16:50:32.048.
+Test Case '-[ClearpathCoreTests.ResolverTests testAliasesCannotReturnUnsafeAddresses]' started.
+Test Case '-[ClearpathCoreTests.ResolverTests testAliasesCannotReturnUnsafeAddresses]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.ResolverTests testBlockedDomainsNeverReachUpstream]' started.
+Test Case '-[ClearpathCoreTests.ResolverTests testBlockedDomainsNeverReachUpstream]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.ResolverTests testLargeUDPTruncatesButTCPReturnsFullAnswer]' started.
+Test Case '-[ClearpathCoreTests.ResolverTests testLargeUDPTruncatesButTCPReturnsFullAnswer]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.ResolverTests testMalformedReturnsFORMERR]' started.
+Test Case '-[ClearpathCoreTests.ResolverTests testMalformedReturnsFORMERR]' passed (0.000 seconds).
+Test Case '-[ClearpathCoreTests.ResolverTests testNormalDevelopmentDomains]' started.
+Test Case '-[ClearpathCoreTests.ResolverTests testNormalDevelopmentDomains]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.ResolverTests testSafeHTTPSHintsAndCNAME]' started.
+Test Case '-[ClearpathCoreTests.ResolverTests testSafeHTTPSHintsAndCNAME]' passed (0.000 seconds).
+Test Case '-[ClearpathCoreTests.ResolverTests testSafeOutageAndNoAAAA]' started.
+Test Case '-[ClearpathCoreTests.ResolverTests testSafeOutageAndNoAAAA]' passed (0.000 seconds).
+Test Case '-[ClearpathCoreTests.ResolverTests testSafeSearchIPv4IPv6AllMappings]' started.
+Test Case '-[ClearpathCoreTests.ResolverTests testSafeSearchIPv4IPv6AllMappings]' passed (0.003 seconds).
+Test Case '-[ClearpathCoreTests.ResolverTests testTruncatedUpstreamIncludingPartialRecordRetriesTCP]' started.
+Test Case '-[ClearpathCoreTests.ResolverTests testTruncatedUpstreamIncludingPartialRecordRetriesTCP]' passed (0.001 seconds).
+Test Case '-[ClearpathCoreTests.ResolverTests testWrongIDOrQuestionRejected]' started.
+Test Case '-[ClearpathCoreTests.ResolverTests testWrongIDOrQuestionRejected]' passed (0.001 seconds).
+Test Suite 'ResolverTests' passed at 2026-11-17 16:50:32.058.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 0.009 (0.010) seconds
+Test Suite 'TransportTests' started at 2026-11-17 16:50:32.058.
+Test Case '-[ClearpathCoreTests.TransportTests testHostnameUpstreamRejectedToPreventRecursion]' started.
+Test Case '-[ClearpathCoreTests.TransportTests testHostnameUpstreamRejectedToPreventRecursion]' passed (0.000 seconds).
+Test Case '-[ClearpathCoreTests.TransportTests testRealUDPAndTCPAndIPv6]' started.
+Test Case '-[ClearpathCoreTests.TransportTests testRealUDPAndTCPAndIPv6]' passed (0.005 seconds).
+Test Case '-[ClearpathCoreTests.TransportTests testTransactionDeadlineAndCancellation]' started.
+Test Case '-[ClearpathCoreTests.TransportTests testTransactionDeadlineAndCancellation]' passed (0.053 seconds).
+Test Suite 'TransportTests' passed at 2026-11-17 16:50:32.116.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.058 (0.058) seconds
+Test Suite 'WireTests' started at 2026-11-17 16:50:32.116.
+Test Case '-[ClearpathCoreTests.WireTests testCompressionCycleAndTrailingGarbageRejected]' started.
+Test Case '-[ClearpathCoreTests.WireTests testCompressionCycleAndTrailingGarbageRejected]' passed (0.000 seconds).
+Test Case '-[ClearpathCoreTests.WireTests testEDNSRewriteDoesNotKeepOPTOrAD]' started.
+Test Case '-[ClearpathCoreTests.WireTests testEDNSRewriteDoesNotKeepOPTOrAD]' passed (0.000 seconds).
+Test Case '-[ClearpathCoreTests.WireTests testMalformedRandomPacketsDoNotCrash]' started.
+Test Case '-[ClearpathCoreTests.WireTests testMalformedRandomPacketsDoNotCrash]' passed (0.010 seconds).
+Test Case '-[ClearpathCoreTests.WireTests testStreamFragmentationAndPipeline]' started.
+Test Case '-[ClearpathCoreTests.WireTests testStreamFragmentationAndPipeline]' passed (0.000 seconds).
+Test Case '-[ClearpathCoreTests.WireTests testStreamPipelineBound]' started.
+Test Case '-[ClearpathCoreTests.WireTests testStreamPipelineBound]' passed (0.000 seconds).
+Test Suite 'WireTests' passed at 2026-11-17 16:50:32.128.
+	 Executed 5 tests, with 0 failures (0 unexpected) in 0.011 (0.011) seconds
+Test Suite 'ClearpathCoreTests.xctest' passed at 2026-11-17 16:50:32.128.
+	 Executed 32 tests, with 0 failures (0 unexpected) in 0.088 (0.090) seconds
+Test Suite 'All tests' passed at 2026-11-17 16:50:32.128.
+	 Executed 32 tests, with 0 failures (0 unexpected) in 0.088 (0.091) seconds
+◇ Test run started.
+↳ Testing Library Version: 2403
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

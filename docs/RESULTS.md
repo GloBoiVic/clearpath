@@ -1,5 +1,7 @@
 # Observed results — 2026-11-17
 
+> Initial Python experiment evidence, retained for comparison. For the subsequent native implementation, current test counts, signing gate and unverified acceptance criteria, see [native results](native/RESULTS.md).
+
 ## Conclusion
 
 **The policy/DNS mechanism works in isolation. System-wide cross-browser reliability remains unverified.** The recommended next foundation experiment is a signed native DNS Proxy plus browser policy in a disposable VM. There is insufficient evidence to ship a product claiming complete protection or developer-workflow compatibility.

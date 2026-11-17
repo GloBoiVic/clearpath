@@ -1,0 +1,13 @@
+{
+  "host_adhoc_signature_valid": true,
+  "provider_adhoc_signature_valid": true,
+  "provider_class_registered_in_objc_classlist": true,
+  "provider_class_matches_plist": true,
+  "mutation_without_flag_rejected": true,
+  "uninstalled_binary_rejected_before_manager": true,
+  "installed": false,
+  "activated": false,
+  "notarized": false,
+  "signing": "ad-hoc inspection only",
+  "system_configuration_changed": false
+}

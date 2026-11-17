@@ -1,0 +1,38 @@
+test_alternate_dns_bypasses_filter (test_filter.NetworkTests) ... ok
+test_block_all_record_types_udp_tcp (test_filter.NetworkTests) ... ok
+test_cname_cloaking_blocked_and_safe_alias (test_filter.NetworkTests) ... ok
+test_concurrent_requests (test_filter.NetworkTests) ... ok
+test_developer_domain_forwarding (test_filter.NetworkTests) ... ok
+test_edns_fresh_packets (test_filter.NetworkTests) ... ok
+test_invalid_packets_and_multi_question (test_filter.NetworkTests) ... ok
+test_ipv6_listener_and_upstream (test_filter.NetworkTests) ... ok
+test_large_answer_client_retries_tcp (test_filter.NetworkTests) ... ok
+test_loopback_and_port_guards (test_filter.NetworkTests) ... ok
+test_no_query_logging (test_filter.NetworkTests) ... ok
+test_process_restart_and_sighup (test_filter.NetworkTests) ... ok
+test_safe_failure_does_not_forward_normal_search (test_filter.NetworkTests) ... ok
+test_safe_no_ipv6_is_nodata_not_unsafe_fallback (test_filter.NetworkTests) ... ok
+test_safesearch_all_mappings_ipv4_ipv6 (test_filter.NetworkTests) ... ok
+test_suppress_safe_https_svcb_and_no_ad (test_filter.NetworkTests) ... ok
+test_timeout_returns_servfail (test_filter.NetworkTests) ... ok
+test_upstream_truncation_retries_tcp (test_filter.NetworkTests) ... ok
+test_adult_import (test_filter.PolicyTests) ... ok
+test_atomic_custom_list_import_and_failure (test_filter.PolicyTests) ... ok
+test_boundaries_case_and_idn (test_filter.PolicyTests) ... ok
+test_precedence_and_exception (test_filter.PolicyTests) ... ok
+test_reject_allow_overlap_with_safesearch (test_filter.PolicyTests) ... ok
+test_reject_bad_rules (test_filter.PolicyTests) ... ok
+test_reject_schema_duplicate_and_cycle (test_filter.PolicyTests) ... ok
+test_reload_last_good_and_restart (test_filter.PolicyTests) ... ok
+test_shared_native_policy_corpus (test_filter.PolicyTests) ... ok
+test_mismatched_reply_rejected (test_filter.UpstreamValidationTests) ... ok
+test_partial_tcp_frame (test_filter.UpstreamValidationTests) ... ok
+test_custom_supplement_does_not_silently_truncate (test_native_tools.BrowserProfileTests) ... ok
+test_removable_profile_has_only_owned_browser_payloads (test_native_tools.BrowserProfileTests) ... ok
+test_bundle_and_entitlements_match (test_native_tools.BundleTests) ... ok
+test_profile_validation_checks_capabilities_identity_and_expiry (test_native_tools.BundleTests) ... ok
+
+----------------------------------------------------------------------
+Ran 33 tests in 3.708s
+
+OK

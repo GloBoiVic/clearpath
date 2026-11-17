@@ -1,0 +1,15 @@
+{
+  "os": "27.2.1",
+  "architecture": "arm64",
+  "identity_query_succeeded": true,
+  "developer_id_application_identities": 0,
+  "apple_development_identities": 1,
+  "profiles_examined": 2,
+  "dns_proxy_systemextension_profiles": 0,
+  "unreadable_profiles": 0,
+  "hardware_virtualization_supported": true,
+  "vm_tools_found": [],
+  "clearpath_extension_listed": false,
+  "runtime_validation_performed": false,
+  "notes": "Counts only; no certificate/profile contents or account identifiers exported. No VM was provisioned or started. An absent Developer ID identity or DNS entitlement profile blocks this direct-distribution activation path."
+}

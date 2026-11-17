@@ -1,0 +1,282 @@
+{
+  "system_configuration_changed": false,
+  "native_extension_activated": false,
+  "results": [
+    {
+      "host": "adult.example",
+      "type": 1,
+      "tcp": false,
+      "rcode": 3,
+      "records": [],
+      "pass": true
+    },
+    {
+      "host": "pornhub.com",
+      "type": 28,
+      "tcp": true,
+      "rcode": 3,
+      "records": [],
+      "pass": true
+    },
+    {
+      "host": "blocked.example",
+      "type": 65,
+      "tcp": false,
+      "rcode": 3,
+      "records": [],
+      "pass": true
+    },
+    {
+      "host": "www.google.com",
+      "type": 1,
+      "tcp": false,
+      "rcode": 0,
+      "records": [
+        {
+          "type": "CNAME",
+          "value": "forcesafesearch.google.com."
+        },
+        {
+          "type": "A",
+          "value": "216.239.38.120"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "host": "www.google.com",
+      "type": 28,
+      "tcp": false,
+      "rcode": 0,
+      "records": [
+        {
+          "type": "CNAME",
+          "value": "forcesafesearch.google.com."
+        },
+        {
+          "type": "AAAA",
+          "value": "2001:4860:4802:32::78"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "host": "www.google.com",
+      "type": 65,
+      "tcp": false,
+      "rcode": 0,
+      "records": [],
+      "pass": true
+    },
+    {
+      "host": "www.bing.com",
+      "type": 1,
+      "tcp": true,
+      "rcode": 0,
+      "records": [
+        {
+          "type": "CNAME",
+          "value": "strict.bing.com."
+        },
+        {
+          "type": "CNAME",
+          "value": "strict-bing-com.ax-0007.ax-msedge.net."
+        },
+        {
+          "type": "CNAME",
+          "value": "ax-0007.ax-msedge.net."
+        },
+        {
+          "type": "A",
+          "value": "150.171.27.16"
+        },
+        {
+          "type": "A",
+          "value": "150.171.28.16"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "host": "duckduckgo.com",
+      "type": 1,
+      "tcp": false,
+      "rcode": 0,
+      "records": [
+        {
+          "type": "CNAME",
+          "value": "safe.duckduckgo.com."
+        },
+        {
+          "type": "A",
+          "value": "40.89.244.237"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "host": "github.com",
+      "type": 1,
+      "tcp": false,
+      "rcode": 0,
+      "records": [
+        {
+          "type": "A",
+          "value": "140.82.114.3"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "host": "registry.npmjs.org",
+      "type": 1,
+      "tcp": false,
+      "rcode": 0,
+      "records": [
+        {
+          "type": "A",
+          "value": "104.16.0.34"
+        },
+        {
+          "type": "A",
+          "value": "104.16.2.34"
+        },
+        {
+          "type": "A",
+          "value": "104.16.8.34"
+        },
+        {
+          "type": "A",
+          "value": "104.16.3.34"
+        },
+        {
+          "type": "A",
+          "value": "104.16.10.34"
+        },
+        {
+          "type": "A",
+          "value": "104.16.9.34"
+        },
+        {
+          "type": "A",
+          "value": "104.16.6.34"
+        },
+        {
+          "type": "A",
+          "value": "104.16.5.34"
+        },
+        {
+          "type": "A",
+          "value": "104.16.1.34"
+        },
+        {
+          "type": "A",
+          "value": "104.16.4.34"
+        },
+        {
+          "type": "A",
+          "value": "104.16.11.34"
+        },
+        {
+          "type": "A",
+          "value": "104.16.7.34"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "host": "pypi.org",
+      "type": 1,
+      "tcp": true,
+      "rcode": 0,
+      "records": [
+        {
+          "type": "A",
+          "value": "151.101.192.223"
+        },
+        {
+          "type": "A",
+          "value": "151.101.0.223"
+        },
+        {
+          "type": "A",
+          "value": "151.101.64.223"
+        },
+        {
+          "type": "A",
+          "value": "151.101.128.223"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "host": "registry-1.docker.io",
+      "type": 28,
+      "tcp": false,
+      "rcode": 0,
+      "records": [
+        {
+          "type": "AAAA",
+          "value": "2600:1f18:2148:bc00:cfa9:eb18:f305:65f3"
+        },
+        {
+          "type": "AAAA",
+          "value": "2600:1f18:2148:bc02:f6fb:a142:48de:2bc7"
+        },
+        {
+          "type": "AAAA",
+          "value": "2600:1f18:2148:bc01:74d:11ac:1b54:69a3"
+        },
+        {
+          "type": "AAAA",
+          "value": "2600:1f18:2148:bc00:6b7d:645:eb08:bb21"
+        },
+        {
+          "type": "AAAA",
+          "value": "2600:1f18:2148:bc02:1914:f73c:c9ac:dc20"
+        },
+        {
+          "type": "AAAA",
+          "value": "2600:1f18:2148:bc00:adf3:35b:c69d:cba4"
+        },
+        {
+          "type": "AAAA",
+          "value": "2600:1f18:2148:bc01:5963:e996:adbf:5fec"
+        },
+        {
+          "type": "AAAA",
+          "value": "2600:1f18:2148:bc01:cd7c:c6e0:5ea9:abb3"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "host": "www.google.com",
+      "probe": "HTTPS_HEAD",
+      "http_tls": "200 0",
+      "pass": true
+    },
+    {
+      "host": "github.com",
+      "probe": "HTTPS_HEAD",
+      "http_tls": "200 0",
+      "pass": true
+    },
+    {
+      "host": "registry.npmjs.org",
+      "probe": "HTTPS_HEAD",
+      "http_tls": "200 0",
+      "pass": true
+    },
+    {
+      "host": "pypi.org",
+      "probe": "HTTPS_HEAD",
+      "http_tls": "200 0",
+      "pass": true
+    },
+    {
+      "probe": "GIT_LS_REMOTE",
+      "pass": true
+    }
+  ]
+}

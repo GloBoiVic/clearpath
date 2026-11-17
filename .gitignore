@@ -3,3 +3,9 @@ __pycache__/
 .DS_Store
 artifacts/
 policy.local.json
+native/.build/
+native/.swiftpm/
+*.mobileprovision
+*.provisionprofile
+*.p12
+*.mobileconfig

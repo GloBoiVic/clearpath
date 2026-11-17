@@ -1,0 +1,14 @@
+{
+  "native_extension_activated": false,
+  "browser_tests": {"safari": "not_run", "chrome": "not_run", "firefox": "not_run"},
+  "safesearch_browser_lock": "not_run",
+  "developer_workflows_with_interception": "not_run",
+  "control_process_exit_persistence": "not_run",
+  "reboot_persistence": "not_run",
+  "signed_installation": "not_run",
+  "actual_os_rollback": "not_run",
+  "browser_profile_install_remove": "not_run",
+  "known_bypasses_documented": true,
+  "daily_use_release_gate": "blocked",
+  "blockers": ["No Developer ID Application signing identity", "No DNS Proxy system-extension entitlement profile", "No prepared disposable macOS VM"]
+}
