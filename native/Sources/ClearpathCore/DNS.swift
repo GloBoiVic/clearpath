@@ -25,7 +25,13 @@ public struct DNSRecord: Sendable {
     }
     var wire: [UInt8] {
         let body = cname?.wire ?? data
-        return name.wire + u16(type) + u16(klass) + u32(ttl) + u16(UInt16(body.count)) + body
+        var packet = name.wire
+        packet.append(contentsOf: u16(type))
+        packet.append(contentsOf: u16(klass))
+        packet.append(contentsOf: u32(ttl))
+        packet.append(contentsOf: u16(UInt16(body.count)))
+        packet.append(contentsOf: body)
+        return packet
     }
 }
 
@@ -115,11 +121,24 @@ public struct DNSMessage: Sendable {
     }
     public func response(code: UInt16 = 0, answers: [DNSRecord] = [], truncated: Bool = false) -> [UInt8] {
         let flags: UInt16 = 0x8080 | (self.flags & 0x0100) | (truncated ? 0x0200 : 0) | code
-        return u16(id) + u16(flags) + u16(1) + u16(UInt16(answers.count)) + [0,0,0,0] +
-            name.wire + u16(type) + u16(klass) + answers.flatMap(\.wire)
+        var packet = u16(id)
+        packet.append(contentsOf: u16(flags))
+        packet.append(contentsOf: u16(1))
+        packet.append(contentsOf: u16(UInt16(answers.count)))
+        packet.append(contentsOf: [0,0,0,0])
+        packet.append(contentsOf: name.wire)
+        packet.append(contentsOf: u16(type))
+        packet.append(contentsOf: u16(klass))
+        for record in answers { packet.append(contentsOf: record.wire) }
+        return packet
     }
     public static func query(_ host: String, type: UInt16, id: UInt16 = .random(in: .min ... .max)) -> [UInt8] {
-        u16(id) + [1,0,0,1,0,0,0,0,0,0] + DNSName(host).wire + u16(type) + [0,1]
+        var packet = u16(id)
+        packet.append(contentsOf: [1,0,0,1,0,0,0,0,0,0])
+        packet.append(contentsOf: DNSName(host).wire)
+        packet.append(contentsOf: u16(type))
+        packet.append(contentsOf: [0,1])
+        return packet
     }
     public static func error(for packet: [UInt8], code: UInt16) -> [UInt8] {
         Array((packet + [0,0]).prefix(2)) + u16(0x8000 | code) + [0,0,0,0,0,0,0,0]
