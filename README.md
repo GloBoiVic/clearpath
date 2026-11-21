@@ -52,3 +52,16 @@ Import validates the complete candidate and replaces the file atomically. Use on
 Stop the foreground prototype with **Ctrl-C**. No system rollback is needed. See [testing and rollback](docs/TESTING.md) for the separate disposable-VM procedure, [architecture](docs/ARCHITECTURE.md), [upstream audit](docs/UPSTREAM_AUDIT.md), and [observed results](docs/RESULTS.md).
 
 The code is MIT licensed. No upstream application code or third-party blocklist dataset is vendored. dnslib is a pinned BSD-licensed experiment dependency in maintenance mode; it is not a production resolver recommendation.
+
+## Contributing
+
+Checks every change must pass (from the repository root, after the setup above):
+
+```sh
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m clearpath.policy policy.example.json
+```
+
+After cloning, run `git config core.hooksPath .githooks` to turn on the guard that refuses force-pushes and direct pushes to `main`.
+
+Agents: read `AGENTS.md`.

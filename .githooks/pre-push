@@ -1,0 +1,40 @@
+#!/bin/sh
+# victor-kit guard for main. Installed by vk-start; switched on with
+#   git config core.hooksPath .githooks
+# Refuses force-pushes, pushes straight to main, and deleting main.
+# The first push, which creates main on the remote, is allowed.
+# Changing or bypassing this file is a Hard stop in AGENTS.md.
+
+zero=0000000000000000000000000000000000000000
+status=0
+
+refuse() {
+	echo "pre-push: refused: $1" >&2
+	status=1
+}
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+	# SHA-256 repos use 64-character ids; treat any all-zero id as "none".
+	case "$local_sha" in *[!0]*) local_none=no ;; *) local_none=yes ;; esac
+	case "$remote_sha" in *[!0]*) remote_none=no ;; *) remote_none=yes ;; esac
+
+	if [ "$local_none" = yes ]; then
+		[ "$remote_ref" = refs/heads/main ] && refuse "deleting main"
+		continue
+	fi
+
+	if [ "$remote_ref" = refs/heads/main ] && [ "$remote_none" = no ]; then
+		refuse "pushing straight to main; open a pull request"
+		continue
+	fi
+
+	if [ "$remote_none" = no ]; then
+		# A normal push only adds commits on top of what the remote has.
+		if ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+			refuse "force-push to $remote_ref (it would overwrite commits on the remote)"
+		fi
+	fi
+done
+
+[ "$status" -eq 0 ] || echo "pre-push: ask Victor; this guard is in AGENTS.md Hard stops." >&2
+exit "$status"
