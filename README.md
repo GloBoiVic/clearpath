@@ -55,10 +55,9 @@ The code is MIT licensed. No upstream application code or third-party blocklist 
 
 ## Contributing
 
-Checks every change must pass (from the repository root, after the setup above):
+Every change must pass the unit tests above and the example policy check:
 
 ```sh
-.venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python -m clearpath.policy policy.example.json
 ```
 

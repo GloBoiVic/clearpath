@@ -29,7 +29,7 @@ Commands it offers:
 
 - `python -m clearpath.dns --policy FILE --upstream IP [--upstream-port 53] [--port 1053] [--listen 127.0.0.1]`
 - `python -m clearpath.policy FILE [--import-list domains.txt --category NAME]`
-- `python scripts/live_smoke.py --upstream IP`
+- `python scripts/live_smoke.py --upstream IP [--upstream-port 53]`
 
 What it reads and writes: reads the policy JSON and domain list text files; writes the policy JSON on import. Network: a loopback listener on an unprivileged port (it refuses port 53 and non-loopback addresses), plus outbound DNS to the one upstream given.
 
@@ -69,6 +69,6 @@ None.
 | Proof: unit tests and policy validation | agent | They are the repo's own checks and pass; the Swift check crashes on this Mac and becomes a gap |
 | The agent squash-merges once proof and review pass; PRs touching Hard stops, `AGENTS.md`, `.claude/`, `.githooks/` or the PR template wait for Victor | Victor, 2026-11-21 | |
 | Extra Hard stops: changing this Mac's DNS or network settings; installing a configuration profile, system extension, certificate or browser policy; anything with `sudo`; sending queries to a public DNS server | Victor accepted the recommendation, 2026-11-21 | The repo's own docs already say host changes need his authorization |
-| Repo stays public | already public | |
+| Repo stays public | Victor (existing setting) | It was already public before onboarding |
 
 Approved by Victor on 2026-11-21.
