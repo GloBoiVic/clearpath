@@ -8,6 +8,7 @@ Clearpath is a proof of concept for a local-first macOS filter that blocks adult
 |---|---|
 | `README.md` | What Clearpath is, the layout, how to run it |
 | `docs/BRIEF.md` | What Clearpath is today, what it doesn't do, and the milestones (approved at onboarding) |
+| `docs/DESIGN.md` | The look: tokens, fonts, components, screen map and the approved main screen. UI changes follow it. |
 | `docs/ARCHITECTURE.md` | The technical foundation assessment: options considered, the proposed data path, policy and SafeSearch semantics, limits and the next decision gate |
 | `docs/TESTING.md` | Which tests are safe on this machine, and the disposable-VM procedure for anything that touches a Mac's DNS or browsers |
 | `docs/RESULTS.md` | Observed results of the experiment |
