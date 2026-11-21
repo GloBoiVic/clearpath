@@ -1,0 +1,30 @@
+name: Proof
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    # The Intel runner supports both Python 3.9 and the macOS SDK check.
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.9'
+      - name: Set up the virtual environment
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install -r requirements.txt
+      - name: Run the loopback test suite
+        run: .venv/bin/python -m unittest discover -s tests -v
+      - name: Validate the example policy
+        run: .venv/bin/python -m clearpath.policy policy.example.json
+      - name: Type-check the macOS Network Extension API
+        run: swiftc -typecheck -module-cache-path artifacts/swift-module-cache scripts/check_networkextension.swift
