@@ -2,7 +2,7 @@
 
 Clearpath is a free, open-source macOS app that blocks adult and NSFW websites in every browser, with an accountability partner instead of spyware. What V1 is, and why, is in [docs/BRIEF.md](docs/BRIEF.md); how it is built is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Do not fork distraction-free's resolver or installer. DNS filtering works when requests reach it; arbitrary encrypted DNS, proxies, VPNs and a willing administrator remain bypasses. Cross-browser protection is **not yet validated**.
 
-This repository contains an isolated Python DNS proof of concept, automated tests, upstream bug reproductions, inert browser-policy examples, and an engineering assessment. No UI or accountability system is implemented yet. Nothing here installs a service, edits system DNS, changes Screen Time, installs certificates, or removes administrator access.
+This repository contains an isolated Python DNS proof of concept, automated tests, upstream bug reproductions, inert browser-policy examples, and an engineering assessment. Run `./build.sh` on macOS with the Swift toolchain to open the menu-bar design preview. Click the shield to see synthetic status data. The preview is independent of the DNS harness and partner service. Nothing here installs a service, edits system DNS, changes Screen Time, installs certificates, or removes administrator access.
 
 ## Run locally
 
