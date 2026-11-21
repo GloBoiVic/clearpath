@@ -1,4 +1,26 @@
+# Architecture
+
+## V1 architecture (decided 2026-11-21)
+
+Product rules are in `docs/BRIEF.md` → V1. The diagram is `docs/architecture/clearpath-v1.excalidraw`.
+
+**Victor's decision, 2026-11-21: no paid Apple Developer Program for now.** Apple only allows the DNS proxy system extension to paid members, so V1 does not use it. V1 uses the option the 2026-11-17 assessment below set aside, a local DNS service, and accepts its costs. The extension stays the upgrade path.
+
+Components:
+
+- **Filter service.** A Swift background system service (a root LaunchDaemon that launchd restarts on exit) running a DNS server on the loopback address. The Mac's DNS setting points at it. It reuses the policy engine and DNS code written for the extension on `native-dns-foundation`. It forwards allowed lookups to the resolvers the Mac had before Clearpath, and watches for tampering: the DNS setting changed away from it, or the policy file edited outside the app.
+- **Menu-bar app.** A Swift menu-bar app with no Dock icon: setup, status, block a site, request a removal, partner settings, uninstall. It controls the filter service locally. Quitting it does not stop filtering.
+- **Browser profile.** The existing generator's Chrome and Firefox policy profile, installed during setup, turns off their built-in encrypted DNS so they cannot skip the filter.
+- **Partner service.** A small open-source, self-hostable web service on a free tier. It stores partner emails, the pairing, check-ins, status events and approval requests, sends email, and serves the one-tap Approve and Deny links. It never receives browsing data. It raises the 24-hour "hasn't checked in" alert and applies the 7-day no-answer rule.
+- **Python** stays as the test harness and reference implementation, not the shipping runtime.
+
+Fail closed: if the filter service is down, lookups fail until launchd restarts it. If it stays down, the menu-bar app offers "Restore internet", which restores the previous DNS setting and alerts the partner.
+
+Costs accepted with the local DNS service, to be measured in the VM before Victor's Mac: VPN and split-DNS coexistence, network changes and sleep/wake, captive portals, and an administrator can change the DNS setting back (detected and alerted, not prevented). Bypasses listed in the assessment below (encrypted DNS to arbitrary endpoints, VPNs, proxies, Tor, Private Relay) still apply.
+
 # Technical foundation assessment — 2026-11-17
+
+The assessment that led to the V1 architecture. Its preference for the DNS proxy extension is superseded for V1 by the decision above.
 
 ## Decision and acceptance boundary
 
