@@ -1,5 +1,5 @@
 // Compile-only API check. This file activates no provider or configuration.
-// swiftc -typecheck -module-cache-path /tmp/clearpath-swift-cache scripts/check_networkextension.swift
+// swiftc -typecheck -module-cache-path artifacts/swift-module-cache scripts/check_networkextension.swift
 import NetworkExtension
 
 final class DNSCapabilityProbe: NEDNSProxyProvider {
