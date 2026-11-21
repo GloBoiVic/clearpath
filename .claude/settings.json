@@ -33,6 +33,7 @@
       "Bash(gh api user --jq .login)",
       "Bash(.venv/bin/python -m unittest *)",
       "Bash(.venv/bin/python -m clearpath.policy policy.example.json)",
+      "Bash(swiftc -typecheck -module-cache-path artifacts/swift-module-cache scripts/check_networkextension.swift)",
       "Bash(gh pr merge *)"
     ],
     "ask": [

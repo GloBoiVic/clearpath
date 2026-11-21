@@ -62,6 +62,7 @@ An approval covers only the action it names.
 |---|---|---|
 | `.venv/bin/python -m unittest discover -s tests -v` | every change | yes |
 | `.venv/bin/python -m clearpath.policy policy.example.json` | every change | yes |
+| `swiftc -typecheck -module-cache-path artifacts/swift-module-cache scripts/check_networkextension.swift` | every change | yes |
 | run `clearpath.dns` or `clearpath.policy` on a synthetic policy in a temp folder, with a loopback fixture upstream | any behavior change | yes |
 
 Set up once with `python3 -m venv .venv` and `.venv/bin/python -m pip install -r requirements.txt`.
