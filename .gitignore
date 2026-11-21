@@ -3,3 +3,10 @@ __pycache__/
 .DS_Store
 artifacts/
 policy.local.json
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+.env
+.env.*
+!.env.example
