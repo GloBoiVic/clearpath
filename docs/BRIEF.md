@@ -45,7 +45,7 @@ None.
 - No native macOS DNS Proxy on `main`. That work is on the unmerged branch `native-dns-foundation`.
 - Cross-browser protection (Safari, Chrome, Firefox) is not validated; the VM procedure in `docs/TESTING.md` has not been run.
 - No complete adult block list; the example has three real domains plus test fixtures.
-- No CI, linter, formatter or type checker.
+- No Python linter, formatter or type checker.
 - No DNS cache, encrypted upstream, DNSSEC validation or failover. Encrypted DNS, VPNs, proxies and an administrator can bypass it.
 
 ## Done when
