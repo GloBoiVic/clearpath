@@ -8,9 +8,11 @@ let usage = """
 usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--upstream-port N]
        clearpath-service uninstall
        clearpath-service status
+       clearpath-service browser-profile
   install records every network service's DNS, starts the filter on 127.0.0.1:53 and points DNS at it.
   Without --upstream it follows the Mac's current default and supplemental DNS resolvers.
   uninstall restores the recorded DNS, then stops the filter and removes only Clearpath's files.
+  browser-profile writes Clearpath's removable Chrome and Firefox profile to standard output.
 
 """
 
@@ -54,6 +56,11 @@ case "status":
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         print(String(decoding: try encoder.encode(manager.status()), as: UTF8.self))
+    }
+case "browser-profile":
+    guard arguments.isEmpty else { fail(usage, code: 2) }
+    run {
+        try FileHandle.standardOutput.write(contentsOf: BrowserProfile.configuration())
     }
 default:
     fail(usage, code: 2)

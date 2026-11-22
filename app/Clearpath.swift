@@ -54,6 +54,10 @@ struct Panel: View {
                 openWindow(id: "partner-settings")
                 NSApp.activate(ignoringOtherApps: true)
             }
+            destination("Set up protection", icon: "gearshape") {
+                openWindow(id: "protection-setup")
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
         .padding(16)
         .frame(width: 320)
@@ -120,6 +124,11 @@ struct ClearpathApp: App {
         }.menuBarExtraStyle(.window)
         Window("Partner settings", id: "partner-settings") {
             PartnerSettings()
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+        Window("Set up protection", id: "protection-setup") {
+            ProtectionSetup()
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)

@@ -115,3 +115,24 @@ Issue #10 used a disposable Tart clone of the macOS 26.6.2 (25G83) arm64 image a
 A loopback regression changed the active route after a truncated private UDP reply and verified that the TCP retry stayed on the private resolver. The final guest build also sent an explicitly scoped `corp.local` lookup to the IPv6 fixture and kept an ordinary Bonjour name out of unicast DNS.
 
 The split-DNS fixture exercises macOS resolver state. Vendor VPN compatibility, physical Ethernet-to-Wi-Fi handoff, IPv6 as the VM's default resolver, and traffic sent around the loopback filter remain acceptance items.
+
+# Browser setup in a disposable VM — 2026-11-22
+
+Issue #11 used `clearpath-browser-clean-11`, a disposable Tart clone of the pinned macOS 26.6.2 (25G83) arm64 image above, with Safari 26.6.2, Chrome 158.0.8127.37 and Firefox 160.0.1. The guest ran the installed `clearpath-service` LaunchDaemon with a synthetic policy (SHA256 `7bab6cde…6c9be`): `adult.example` and `blocked.example` blocked with subdomains, `www.google.com` → `forcesafesearch.google.com`, `www.bing.com` → `strict.bing.com`, and `duckduckgo.com` and `www.duckduckgo.com` → `safe.duckduckgo.com`. The filter's upstream was a guest loopback fixture on `127.0.0.1:1053`. It answered `allowed.example` with a loopback HTTP origin, sent only search-provider and browser-download zones to Cloudflare DNS-over-HTTPS, and answered nothing else. The guest's app build targeted macOS 15 (#33). Victor's Mac was not changed.
+
+| Check | Observed |
+|---|---|
+| Setup window | **Check DNS status** reported the installed filter as answering and system DNS pointing to it. **Show browser profile in Finder** revealed the bundled profile. |
+| Profile | `io.clearpath.browser-policy.v1` (SHA256 `59f85531…d839aac`), approved in Device Management, installed one Chrome and one Firefox managed-preferences payload. macOS wrote both `com.google.Chrome` and `org.mozilla.firefox` to `/Library/Managed Preferences`. |
+| Chrome policy | `chrome://policy`: `DnsOverHttpsMode` = `off` and `ForceGoogleSafeSearch` = `true`, both Platform, Machine, Mandatory, status OK. |
+| Firefox policy | `about:policies#active`: `DNSOverHTTPS` with `Enabled` false and `Locked` true, and no Errors section. |
+| Blocking, all three browsers, normal and private windows | `adult.example`, `sub.adult.example`, `blocked.example` and `sub.blocked.example` failed to resolve (Chrome `DNS_PROBE_FINISHED_NXDOMAIN`, Firefox "Server Not Found", Safari "Can't Find the Server"). `allowed.example` loaded. The origin logged requests only for `allowed.example`. |
+| Google | `google.com/safesearch?safe=off`: every browser and mode showed "You can't change your SafeSearch setting right now because someone else… controls settings". Chrome also rewrote the URL to `safe=active`. |
+| Bing | `bing.com/account/general?adlt=off`: every browser and mode showed "Your country or region requires a strict Bing SafeSearch setting". |
+| DuckDuckGo | `duckduckgo.com/?q=cloud+formations&kp=-2` returned results with no SafeSearch control in the filter bar, in every browser and mode. |
+| Profile removal | Removing only **Clearpath Browser Policies** in Device Management left no system profiles and an empty `/Library/Managed Preferences`. After restarting, Chrome showed "No policies set" and Firefox showed "The Enterprise Policies service is inactive." |
+| Filter rollback | `clearpath-service uninstall` restored Ethernet to automatic DNS. `scutil --dns` matched the pre-install capture exactly. The daemon, plist and support folder were gone. Unprivileged `clearpath-service status` and the setup window both reported the filter as not installed. |
+
+An earlier profile put both browsers' settings in one payload and nested Firefox's `DNSOverHTTPS` dictionary. macOS stored that payload but wrote only Chrome's managed preferences, so `about:policies` showed Enterprise Policies inactive. The profile now uses separate payloads and Firefox's flattened keys (`DNSOverHTTPS__Enabled`, `DNSOverHTTPS__Locked`). Firefox 160's macOS parser expands these keys. The VM did not test which of the two changes alone would have been enough.
+
+Not shown here: whether Chrome or Firefox would have used their own encrypted DNS in this VM without the profile, Google SafeSearch from the Chrome policy alone (the DNS mapping was active at the same time), signed-in search accounts, iCloud Private Relay (the VM had no Apple Account), and the remaining V1 acceptance matrix in #25.
