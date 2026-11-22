@@ -64,7 +64,7 @@ Do not use an adult image appearing/not appearing as the sole test: SafeSearch i
 
 ## Filter service install and rollback in the VM
 
-`clearpath-service` replaces the socat relay above for the Swift filter. Run it only inside the disposable VM; on Victor's Mac it waits for the authorized trial.
+`clearpath-service` replaces the socat relay above for the Swift filter. Run it only inside the disposable VM; on Victor's Mac it waits for the authorized trial. The VM tool is [Tart](https://github.com/cirruslabs/tart) with a Cirrus Labs macOS base image, installed from its GitHub release with the checksum verified (Victor, 2026-11-21). Victor approves `sudo` and DNS changes inside the VM per issue.
 
 1. From a clean snapshot (`tart clone <image> <name>` before first boot), copy in `clearpath-filter`, `clearpath-service`, a synthetic policy and a loopback fixture upstream on `127.0.0.1:1053` that logs each name it is asked.
 2. Record the before state: `networksetup -listallnetworkservices`, `networksetup -getdnsservers <service>` for each, `scutil --dns` and `clearpath-service status`.
