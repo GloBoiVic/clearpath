@@ -30,3 +30,5 @@ jobs:
         run: .venv/bin/python -m clearpath.policy policy.example.json
       - name: Type-check the macOS Network Extension API
         run: swiftc -typecheck -module-cache-path artifacts/swift-module-cache scripts/check_networkextension.swift
+      - name: Type-check the menu-bar app
+        run: swiftc -typecheck -parse-as-library -module-cache-path artifacts/swift-module-cache app/*.swift
