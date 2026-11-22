@@ -221,8 +221,11 @@ class SwiftFilterProcess(unittest.TestCase):
         self.stop(proc)
 
     def test_slow_answers_outlive_the_idle_timeout_and_idle_connections_close(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent:
+        # A slow upstream on both transports: UDP never replies; TCP accepts and never replies.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent, socket.socket(socket.AF_INET, socket.SOCK_STREAM) as stalled:
             silent.bind(("127.0.0.1", 0))
+            stalled.bind(("127.0.0.1", silent.getsockname()[1]))
+            stalled.listen(8)
             proc, port = self.launch("--timeout", "1", "--idle-timeout", "0.3", upstream_port=silent.getsockname()[1])
             self.assertEqual(self.ask(port, "github.com", "A").header.rcode, RCODE.SERVFAIL)
             queries = [DNSRecord.question(name) for name in ("github.com", "www.google.com")]
@@ -234,6 +237,8 @@ class SwiftFilterProcess(unittest.TestCase):
                     self.assertEqual(len(header), 2, "connection closed before every slow answer was written")
                     response = DNSRecord.parse(stream.read(struct.unpack("!H", header)[0]))
                     self.assertEqual((response.header.id, response.header.rcode), (query.header.id, RCODE.SERVFAIL))
+            stalled.settimeout(0)
+            self.assertIsNotNone(stalled.accept())  # the TCP lookups really reached the stalled upstream
             with socket.create_connection(("127.0.0.1", port), timeout=3) as idle:
                 self.assertEqual(idle.recv(10), b"")  # closed by the idle timeout, not the 3 s socket timeout
             self.stop(proc)

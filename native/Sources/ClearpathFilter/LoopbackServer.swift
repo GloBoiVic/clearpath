@@ -82,7 +82,7 @@ final class LoopbackServer: @unchecked Sendable {
         let tcp: Bool
         var stream = DNSStream()
         var timer: DispatchSourceTimer?
-        var busy = 0  // queries received and not yet answered; the idle timer never closes these
+        var busy = 0  // lookups in progress (each bounded by the upstream deadline); idle never closes these
         init(connection: NWConnection, tcp: Bool) { self.connection = connection; self.tcp = tcp }
     }
 
@@ -127,13 +127,8 @@ final class LoopbackServer: @unchecked Sendable {
             if error != nil { self.close(key); return }
             if let data {
                 self.touch(client, key: key)
-                client.busy += 1
-                self.answer(Array(data), tcp: false) { [weak self] answer in
-                    guard let self, self.connections[key] != nil else { return }
-                    client.connection.send(content: Data(answer), completion: .contentProcessed { [weak self] _ in
-                        client.busy -= 1
-                        if let self, self.connections[key] != nil { self.touch(client, key: key) }
-                    })
+                self.answer(Array(data), tcp: false, client: client, key: key) { answer in
+                    client.connection.send(content: Data(answer), completion: .contentProcessed { _ in })
                 }
             }
             self.receiveUDP(client, key: key)
@@ -146,11 +141,9 @@ final class LoopbackServer: @unchecked Sendable {
             let messages: [[UInt8]]
             do { messages = try data.map { try client.stream.append(Array($0)) } ?? [] }
             catch { self.close(key); return }  // bad framing or oversized buffer
-            if !messages.isEmpty { client.busy += 1 }
             // Messages on one connection are answered in order, then reading resumes.
             self.answerInOrder(messages, client: client, key: key) { [weak self] in
                 guard let self, self.connections[key] != nil else { return }
-                if !messages.isEmpty { client.busy -= 1; self.touch(client, key: key) }
                 if error != nil || complete {
                     // Close only after replies are written; RFC 7766 lets a client half-close.
                     client.connection.send(content: nil, isComplete: true, completion: .contentProcessed { [weak self] _ in self?.close(key) })
@@ -163,8 +156,8 @@ final class LoopbackServer: @unchecked Sendable {
 
     private func answerInOrder(_ messages: [[UInt8]], client: Client, key: ObjectIdentifier, then done: @escaping () -> Void) {
         guard let first = messages.first else { done(); return }
-        answer(first, tcp: true) { [weak self] answer in
-            guard let self, self.connections[key] != nil else { return }
+        answer(first, tcp: true, client: client, key: key) { [weak self] answer in
+            guard let self else { return }
             guard let frame = try? DNSStream.frame(answer) else { self.close(key); return }
             client.connection.send(content: Data(frame), completion: .contentProcessed { [weak self] error in
                 guard let self else { return }
@@ -174,18 +167,25 @@ final class LoopbackServer: @unchecked Sendable {
         }
     }
 
-    /// Resolves off the queue and delivers the answer back on it. Over the in-flight
-    /// bound a lookup is refused with SERVFAIL rather than queued without limit.
-    private func answer(_ packet: [UInt8], tcp: Bool, deliver: @escaping ([UInt8]) -> Void) {
+    /// Resolves off the queue and delivers the answer back on it, only while the client is
+    /// still connected. The client counts as busy only during the lookup: once the answer
+    /// is handed to the connection, a client that stops reading is idle and gets closed.
+    /// Over the in-flight bound a lookup is refused with SERVFAIL rather than queued.
+    private func answer(_ packet: [UInt8], tcp: Bool, client: Client, key: ObjectIdentifier, deliver: @escaping ([UInt8]) -> Void) {
         guard inFlight < Self.maxInFlight else {
             deliver((try? DNSMessage(packet))?.response(code: 2) ?? DNSMessage.error(for: packet, code: 2)); return
         }
         inFlight += 1
+        client.busy += 1
         let resolver = resolver, upstream = upstream
         Task { [weak self] in
             let answer = await resolver.resolve(packet, tcp: tcp, upstream: upstream)
             self?.queue.async { [weak self] in
-                self?.inFlight -= 1
+                guard let self else { return }
+                self.inFlight -= 1
+                client.busy -= 1
+                guard self.connections[key] != nil else { return }
+                self.touch(client, key: key)  // the idle clock restarts when the answer is ready
                 deliver(answer)
             }
         }
