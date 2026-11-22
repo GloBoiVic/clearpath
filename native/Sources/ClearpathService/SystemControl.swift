@@ -1,0 +1,92 @@
+import Foundation
+
+/// The macOS tools the service manager drives, by absolute path so `PATH` cannot swap them.
+public enum Tool: String, Sendable {
+    case networksetup = "/usr/sbin/networksetup"
+    case launchctl = "/bin/launchctl"
+    case scutil = "/usr/sbin/scutil"
+}
+
+public struct CommandResult: Sendable {
+    public let status: Int32
+    public let output: String
+    public init(status: Int32, output: String) { self.status = status; self.output = output }
+}
+
+/// Everything that touches the running system. Tests substitute a fake; `MacSystem` is real.
+public protocol SystemControl {
+    var isRoot: Bool { get }
+    func run(_ tool: Tool, _ arguments: [String]) throws -> CommandResult
+    /// True when nothing holds the loopback UDP or TCP port.
+    func portIsFree(_ port: UInt16) -> Bool
+    /// True when a DNS server on loopback answers a header-only probe with FORMERR. The probe
+    /// carries no name, so the filter answers it locally and nothing goes upstream.
+    func filterAnswers(port: UInt16) -> Bool
+    func pause(seconds: Double)
+}
+
+public struct MacSystem: SystemControl {
+    public init() {}
+
+    public var isRoot: Bool { geteuid() == 0 }
+
+    public func run(_ tool: Tool, _ arguments: [String]) throws -> CommandResult {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tool.rawValue)
+        process.arguments = arguments
+        process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C", "LC_ALL": "C"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        process.standardInput = FileHandle.nullDevice
+        try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return CommandResult(status: process.terminationStatus, output: String(decoding: data, as: UTF8.self))
+    }
+
+    public func portIsFree(_ port: UInt16) -> Bool {
+        canBind(SOCK_DGRAM, port: port) && canBind(SOCK_STREAM, port: port)
+    }
+
+    public func filterAnswers(port: UInt16) -> Bool {
+        let fd = socket(AF_INET, SOCK_DGRAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var timeout = timeval(tv_sec: 0, tv_usec: 500_000)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        var address = loopback(port: port)
+        let connected = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard connected == 0 else { return false }
+        let id = UInt16.random(in: 0...UInt16.max)
+        let probe: [UInt8] = [UInt8(id >> 8), UInt8(id & 0xFF), 0x01, 0x00] + Array(repeating: 0, count: 8)
+        guard send(fd, probe, probe.count, 0) == probe.count else { return false }
+        var reply = [UInt8](repeating: 0, count: 512)
+        let count = recv(fd, &reply, reply.count, 0)
+        // Same ID, a response (QR set) and FORMERR (rcode 1): a DNS server, not just an open port.
+        return count >= 12 && reply[0] == probe[0] && reply[1] == probe[1] && reply[2] & 0x80 != 0 && reply[3] & 0x0F == 1
+    }
+
+    public func pause(seconds: Double) { Thread.sleep(forTimeInterval: seconds) }
+
+    private func canBind(_ type: Int32, port: UInt16) -> Bool {
+        let fd = socket(AF_INET, type, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var address = loopback(port: port)
+        return withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        } == 0
+    }
+
+    private func loopback(port: UInt16) -> sockaddr_in {
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        return address
+    }
+}

@@ -30,17 +30,17 @@ BLOCKED = ("adult.example", "sub.adult.example", "blocked.example", "sub.blocked
 RECORD_TYPES = ("A", "AAAA", "HTTPS", "SVCB")
 
 
-def build_filter():
+def build_filter(product="clearpath-filter"):
     """Build the current source so the test never runs a stale binary."""
     swift = shutil.which("swift")
     if swift is None:
         raise RuntimeError("swift is required: the Swift filter is part of the shipped product")
-    common = [swift, "build", "--package-path", str(ROOT / "native"), "--scratch-path", str(SCRATCH), "--product", "clearpath-filter"]
+    common = [swift, "build", "--package-path", str(ROOT / "native"), "--scratch-path", str(SCRATCH), "--product", product]
     built = subprocess.run(common, capture_output=True, text=True)
     if built.returncode != 0:
         raise RuntimeError("swift build failed:\n" + built.stdout[-4000:] + built.stderr[-4000:])
     path = subprocess.run(common + ["--show-bin-path"], capture_output=True, text=True, check=True).stdout.strip()
-    return Path(path) / "clearpath-filter"
+    return Path(path) / product
 
 
 class LiveFixture(Fixture):
@@ -281,14 +281,16 @@ class SwiftFilterProcess(unittest.TestCase):
                 self.assertEqual(response.rr[-1].rtype, QTYPE.AAAA)
             self.stop(proc)
 
-    def test_listener_only_on_loopback_and_unprivileged_ports(self):
+    def test_listener_only_on_loopback_and_unprivileged_ports_except_dns(self):
         base = [str(self.binary), "--policy", str(self.policy), "--upstream", "127.0.0.1", "--upstream-port", str(self.upstream_port)]
         refused = (
             ["--listen", "0.0.0.0", "--port", "0"],
             ["--listen", "::", "--port", "0"],
             ["--listen", "192.0.2.1", "--port", "0"],
-            ["--port", "53"],
+            ["--port", "80"],
             ["--port", "1023"],
+            ["--port", "0", "--user", "nobody"],  # dropping privileges needs a root start
+            ["--port", "0", "--user", "no-such-user"],
             ["--port", "0", "--idle-timeout", "0"],
         )
         for extra in refused:
@@ -325,6 +327,35 @@ class SwiftFilterProcess(unittest.TestCase):
         self.assertEqual(os.listdir(self.tmp), ["policy.json"])  # the process writes nothing
         for name in ("github.com", "google", "adult"):
             self.assertNotIn(name, output)
+
+
+@unittest.skipIf(os.geteuid() == 0, "checks the refusal a non-root user gets")
+class SwiftServiceCommandTests(unittest.TestCase):
+    """The service tool's real command line, run as an ordinary user: it must refuse before
+    reading or changing anything. Install and rollback themselves run in the disposable VM."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.binary = build_filter("clearpath-service")
+
+    def test_install_and_uninstall_refuse_without_root_and_change_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            filter_path, policy = Path(tmp) / "clearpath-filter", Path(tmp) / "policy.json"
+            filter_path.write_text("#!/bin/sh\n")
+            policy.write_text((ROOT / "policy.example.json").read_text())
+            for command in (["install", "--filter", str(filter_path), "--policy", str(policy), "--upstream", "192.0.2.1"], ["uninstall"]):
+                result = subprocess.run([str(self.binary), *command], cwd=tmp, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("must run as root", result.stderr)
+                self.assertEqual(result.stdout, "")
+            self.assertEqual(sorted(os.listdir(tmp)), ["clearpath-filter", "policy.json"])
+        self.assertFalse(Path("/Library/LaunchDaemons/io.clearpath.filter.plist").exists())
+
+    def test_bad_usage_exits_2(self):
+        for command in ([], ["install"], ["install", "--policy"], ["uninstall", "now"], ["status", "x"], ["start"]):
+            result = subprocess.run([str(self.binary), *command], capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 2, command)
+            self.assertIn("usage: clearpath-service", result.stderr)
 
 
 if __name__ == "__main__":
