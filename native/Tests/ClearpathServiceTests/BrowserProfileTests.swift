@@ -3,7 +3,7 @@ import XCTest
 @testable import ClearpathService
 
 final class BrowserProfileTests: XCTestCase {
-    func testProfileOnlyManagesBrowserDNSAndCanBeRemovedByIdentifier() throws {
+    func testProfileManagesBrowserDNSAndChromeSafeSearchAndCanBeRemovedByIdentifier() throws {
         let data = try BrowserProfile.configuration()
         XCTAssertEqual(data, try BrowserProfile.configuration())
         let profile = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
@@ -13,17 +13,29 @@ final class BrowserProfileTests: XCTestCase {
         XCTAssertEqual(profile["PayloadRemovalDisallowed"] as? Bool, false)
 
         let payloads = try XCTUnwrap(profile["PayloadContent"] as? [[String: Any]])
-        XCTAssertEqual(payloads.count, 1)
-        let payload = try XCTUnwrap(payloads.first)
+        XCTAssertEqual(payloads.count, 2)
+        let uuids = ([profile] + payloads).compactMap { $0["PayloadUUID"] as? String }
+        XCTAssertEqual(Set(uuids).count, 3)
+        let chrome = try settings(for: "com.google.Chrome", in: payloads)
+        XCTAssertEqual(Set(chrome.keys), ["DnsOverHttpsMode", "ForceGoogleSafeSearch"])
+        XCTAssertEqual(chrome["DnsOverHttpsMode"] as? String, "off")
+        XCTAssertEqual(chrome["ForceGoogleSafeSearch"] as? Bool, true)
+        let firefox = try settings(for: "org.mozilla.firefox", in: payloads)
+        XCTAssertEqual(firefox as? [String: Bool], [
+            "EnterprisePoliciesEnabled": true,
+            "DNSOverHTTPS__Enabled": false,
+            "DNSOverHTTPS__Locked": true
+        ])
+    }
+
+    private func settings(for domain: String, in payloads: [[String: Any]]) throws -> [String: Any] {
+        typealias Domain = [String: [[String: [String: Any]]]]
+        let payload = try XCTUnwrap(payloads.first {
+            ($0["PayloadContent"] as? [String: Domain])?[domain] != nil
+        })
         XCTAssertEqual(payload["PayloadType"] as? String, "com.apple.ManagedClient.preferences")
-        XCTAssertNotEqual(payload["PayloadUUID"] as? String, profile["PayloadUUID"] as? String)
-        let domains = try XCTUnwrap(payload["PayloadContent"] as? [String: [String: [[String: [String: Any]]]]])
-        XCTAssertEqual(Set(domains.keys), ["com.google.Chrome", "org.mozilla.firefox"])
-        let chrome = try XCTUnwrap(domains["com.google.Chrome"]?["Forced"]?.first?["mcx_preference_settings"])
-        XCTAssertEqual(chrome as? [String: String], ["DnsOverHttpsMode": "off"])
-        let firefox = try XCTUnwrap(domains["org.mozilla.firefox"]?["Forced"]?.first?["mcx_preference_settings"])
-        XCTAssertEqual(Set(firefox.keys), ["EnterprisePoliciesEnabled", "DNSOverHTTPS"])
-        XCTAssertEqual(firefox["EnterprisePoliciesEnabled"] as? Bool, true)
-        XCTAssertEqual(firefox["DNSOverHTTPS"] as? [String: Bool], ["Enabled": false, "Locked": true])
+        let domains = try XCTUnwrap(payload["PayloadContent"] as? [String: Domain])
+        XCTAssertEqual(Set(domains.keys), [domain])
+        return try XCTUnwrap(domains[domain]?["Forced"]?.first?["mcx_preference_settings"])
     }
 }

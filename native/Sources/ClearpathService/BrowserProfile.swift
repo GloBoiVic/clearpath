@@ -1,24 +1,32 @@
 import Foundation
 
-/// The browser settings shared by every install. Blocking and SafeSearch stay in the DNS policy.
+/// Managed browser DNS settings and Chrome's Google SafeSearch policy.
 public enum BrowserProfile {
     private static let identifier = "io.clearpath.browser-policy.v1"
     private static let name = "Clearpath Browser Policies"
 
     public static func configuration() throws -> Data {
-        let preferences: [String: Any] = [
-            "PayloadType": "com.apple.ManagedClient.preferences",
-            "PayloadIdentifier": identifier + ".preferences",
-            "PayloadUUID": "55DF331F-AE03-5EF6-AD7C-782689FC6145",
-            "PayloadVersion": 1,
-            "PayloadDisplayName": "Secure DNS settings",
-            "PayloadContent": [
-                "com.google.Chrome": forced(["DnsOverHttpsMode": "off"]),
-                "org.mozilla.firefox": forced([
+        let preferences = [
+            preferencesPayload(
+                domain: "com.google.Chrome", suffix: "chrome",
+                uuid: "4ECC228B-CAAF-57D4-A726-CB43BE59A5CB",
+                name: "Clearpath Chrome settings",
+                settings: [
+                    "DnsOverHttpsMode": "off",
+                    "ForceGoogleSafeSearch": true
+                ]
+            ),
+            preferencesPayload(
+                domain: "org.mozilla.firefox", suffix: "firefox",
+                uuid: "9C6A5945-36DB-5678-B285-FD08B9BD1568",
+                name: "Clearpath Firefox settings",
+                settings: [
                     "EnterprisePoliciesEnabled": true,
-                    "DNSOverHTTPS": ["Enabled": false, "Locked": true]
-                ])
-            ]
+                    // Firefox's documented flat form; macOS did not apply the nested dictionary.
+                    "DNSOverHTTPS__Enabled": false,
+                    "DNSOverHTTPS__Locked": true
+                ]
+            )
         ]
         let profile: [String: Any] = [
             "PayloadType": "Configuration",
@@ -27,15 +35,24 @@ public enum BrowserProfile {
             "PayloadVersion": 1,
             "PayloadDisplayName": name,
             "PayloadOrganization": "Clearpath",
-            "PayloadDescription": "Turns off Chrome and Firefox Secure DNS so they use the Mac's DNS settings.",
+            "PayloadDescription": "Turns off Chrome and Firefox Secure DNS and forces Google SafeSearch in Chrome.",
             "PayloadScope": "System",
             "PayloadRemovalDisallowed": false,
-            "PayloadContent": [preferences]
+            "PayloadContent": preferences
         ]
         return try PropertyListSerialization.data(fromPropertyList: profile, format: .xml, options: 0)
     }
 
-    private static func forced(_ settings: [String: Any]) -> [String: Any] {
-        ["Forced": [["mcx_preference_settings": settings]]]
+    private static func preferencesPayload(
+        domain: String, suffix: String, uuid: String, name: String, settings: [String: Any]
+    ) -> [String: Any] {
+        [
+            "PayloadType": "com.apple.ManagedClient.preferences",
+            "PayloadIdentifier": identifier + "." + suffix,
+            "PayloadUUID": uuid,
+            "PayloadVersion": 1,
+            "PayloadDisplayName": name,
+            "PayloadContent": [domain: ["Forced": [["mcx_preference_settings": settings]]]]
+        ]
     }
 }

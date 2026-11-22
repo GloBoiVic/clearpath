@@ -71,7 +71,7 @@ struct ProtectionSetup: View {
                     Text("The Clearpath browser profile is missing from this build.")
                         .foregroundStyle(.secondary)
                 }
-                Text("Restart both browsers. In Chrome, open chrome://policy and verify DnsOverHttpsMode is off. In Firefox, open about:policies and verify DNSOverHTTPS is disabled and locked.")
+                Text("Restart both browsers. In Chrome, open chrome://policy and verify DnsOverHttpsMode is off and ForceGoogleSafeSearch is true. In Firefox, open about:policies and verify DNSOverHTTPS is disabled and locked.")
                     .textSelection(.enabled)
                 Text("To undo this step, remove only Clearpath Browser Policies in Device Management, then restart the browsers.")
                     .foregroundStyle(.secondary)
