@@ -39,6 +39,10 @@ Clearpath feels quiet, familiar and reassuring. The menu-bar panel takes its sta
 
 Use the system font throughout. Give the protection headline semibold weight and secondary values regular weight. Start the popover at 320 pt wide with 16 pt side insets. Use 8 pt between a symbol and its label and 12 pt between groups. Allow long status text to wrap. Use the system popover shadow and one separator between status and actions.
 
+## App icon
+
+The Finder icon uses a white shield with a winding blue path on a rounded blue tile. The app bundle uses `app/AppIcon.icns`.
+
 ## Menu-bar panel
 
 The menu-bar mark is a monochrome path inside a shield. Its silhouette or badge distinguishes protection and partner states. Give it an accessibility label naming both. The panel opens with **Clearpath**, then **Protection is on** with a green check when protection is verified. Below it, show **Partner** and **Pending requests** as separate rows. Place **Block a site** directly below the divider, followed by **Blocked sites** and **Partner settings**.
@@ -79,6 +83,7 @@ Menu-bar panel. SwiftUI screen in `app/Clearpath.swift`. Approved by Victor on 2
 | Decision | Made by | Why |
 |---|---|---|
 | Clearpath identity, native controls and path-in-a-shield mark | Victor accepted the recommendation | Recognizable in the menu bar and familiar to operate |
+| Blue Finder icon with a winding path through a white shield | Victor approved on 2026-11-21 | Carries the approved menu-bar mark into the app icon |
 | Control Center and System Settings references, comfortable density | Victor accepted the recommendation | Protection, partner status and the primary action are visible at a glance |
 | System appearance and accent | Victor accepted the recommendation | Respects the Mac’s preferences |
 | Initial dimensions and reference colors | Agent | Gives the first SwiftUI panel measurable starting values |
