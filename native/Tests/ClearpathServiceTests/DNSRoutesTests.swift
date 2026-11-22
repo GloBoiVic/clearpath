@@ -85,4 +85,12 @@ final class DNSRoutesTests: XCTestCase {
         XCTAssertEqual(routes.route(for: "host.vpn.example")?.servers, ["192.0.2.54"])
         XCTAssertEqual(routes.route(for: "host.manual.example")?.servers, ["192.0.2.55"])
     }
+
+    func test_explicit_local_scope_keeps_other_bonjour_names_out_of_unicast() {
+        let routes = DNSRoutes(state: [
+            tunnel: ["SupplementalMatchDomains": ["corp.local", ""], "ServerAddresses": ["192.0.2.54"]],
+        ], saved: [:], port: 53)
+        XCTAssertEqual(routes.route(for: "host.corp.local")?.servers, ["192.0.2.54"])
+        XCTAssertNil(routes.route(for: "printer.local"))
+    }
 }

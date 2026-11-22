@@ -40,16 +40,28 @@ public final class NetworkDNS: DNSUpstream, @unchecked Sendable {
     }
 
     public func exchange(_ packet: [UInt8], tcp: Bool) async throws -> [UInt8] {
-        guard let name = try DNSMessage(packet).name.host, !name.isEmpty else { throw DNSError.unsupported }
-        let destinations = destinations(for: name)
-        guard !destinations.isEmpty else { throw DNSError.closed }
-        for (endpoint, interface) in destinations {
-            try Task.checkCancellation()
-            let upstream = NetworkUpstream(endpoint: endpoint, interface: interface,
-                                           timeout: timeout / Double(destinations.count))
-            if let response = try? await upstream.exchange(packet, tcp: tcp) { return response }
+        let question = try DNSMessage(packet).name
+        return try await forQuestion(named: question).exchange(packet, tcp: tcp)
+    }
+
+    public func forQuestion(named name: DNSName) -> any DNSUpstream {
+        guard let host = name.host, !host.isEmpty else { return SelectedRoute(upstreams: []) }
+        let targets = destinations(for: host)
+        return SelectedRoute(upstreams: targets.map { endpoint, interface in
+            NetworkUpstream(endpoint: endpoint, interface: interface, timeout: timeout / Double(targets.count))
+        })
+    }
+
+    private struct SelectedRoute: DNSUpstream {
+        let upstreams: [NetworkUpstream]
+
+        func exchange(_ packet: [UInt8], tcp: Bool) async throws -> [UInt8] {
+            for upstream in upstreams {
+                try Task.checkCancellation()
+                if let response = try? await upstream.exchange(packet, tcp: tcp) { return response }
+            }
+            throw DNSError.closed
         }
-        throw DNSError.closed
     }
 
     private func destinations(for name: String) -> [(NWEndpoint, NWInterface?)] {
@@ -114,8 +126,8 @@ struct DNSRoutes {
     }
 
     func route(for name: String) -> Route? {
-        if Policy.matches(name, rules: ["local", "254.169.in-addr.arpa", "8.e.f.ip6.arpa", "9.e.f.ip6.arpa",
-                                         "a.e.f.ip6.arpa", "b.e.f.ip6.arpa"]) { return nil }
+        let multicast = Policy.matches(name, rules: ["local", "254.169.in-addr.arpa", "8.e.f.ip6.arpa", "9.e.f.ip6.arpa",
+                                                      "a.e.f.ip6.arpa", "b.e.f.ip6.arpa"])
 
         var matches: [(suffix: String, order: Int, route: Route)] = []
         let statePrefix = "State:/Network/Service/"
@@ -144,6 +156,7 @@ struct DNSRoutes {
                                   port: serverPort(configuration), scoped: true)
                 for (index, domain) in domains.enumerated() {
                     guard let suffix = Self.suffix(domain) else { return nil }
+                    if suffix.isEmpty && multicast { continue }
                     if seen.insert(suffix).inserted && (suffix.isEmpty || name == suffix || name.hasSuffix("." + suffix)) {
                         let order = index < orders.count ? orders[index] : Int.max
                         matches.append((suffix, order, route))
@@ -161,6 +174,7 @@ struct DNSRoutes {
             return best.route
         }
 
+        guard !multicast else { return nil }
         let global = state["State:/Network/Global/DNS"] ?? [:]
         let globalServers = global["ServerAddresses"] as? [String] ?? []
         if let first = globalServers.first, !NetworkDNS.isLoopback(NWEndpoint.Host(first)) {

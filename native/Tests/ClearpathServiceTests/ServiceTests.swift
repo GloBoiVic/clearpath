@@ -178,6 +178,7 @@ final class ServiceTests: XCTestCase {
         XCTAssertTrue(args.contains(paths.recovery.path))
         XCTAssertFalse(args.contains("--upstream"), "the installed filter must select its upstream from the current network")
         XCTAssertEqual(ServiceManager.primaryNameserver(in: "resolver #1\n  nameserver[0] : fe80::1\n"), nil)
+        XCTAssertEqual(ServiceManager.primaryNameserver(in: "resolver #1\n  nameserver[0] : fe80::1%lo0\n"), "fe80::1%lo0")
         XCTAssertEqual(ServiceManager.primaryNameserver(in: "No DNS configuration available\n"), nil)
         mac.resolverState = "DNS configuration\n\nresolver #1\n  nameserver[0] : 127.0.0.1\n"
         try manager.uninstall()

@@ -13,11 +13,14 @@ private final class LocalDNSServer: @unchecked Sendable {
     var connections: [NWConnection] = []
     let silent: Bool
     let answerAddress: [UInt8]
-    init(tcp: Bool, ipv6: Bool = false, silent: Bool = false, answerAddress: [UInt8] = [192, 0, 2, 42]) throws {
+    let truncate: Bool
+    init(tcp: Bool, ipv6: Bool = false, silent: Bool = false, answerAddress: [UInt8] = [192, 0, 2, 42],
+         port: NWEndpoint.Port = .any, truncate: Bool = false) throws {
         self.tcp = tcp; self.silent = silent
         self.answerAddress = answerAddress
+        self.truncate = truncate
         let parameters: NWParameters = tcp ? .tcp : .udp
-        parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(ipv6 ? "::1" : "127.0.0.1"), port: .any)
+        parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(ipv6 ? "::1" : "127.0.0.1"), port: port)
         listener = try NWListener(using: parameters)
         let ready = DispatchSemaphore(value: 0)
         listener.stateUpdateHandler = { state in
@@ -43,7 +46,8 @@ private final class LocalDNSServer: @unchecked Sendable {
         }
     }
     func answer(_ query: DNSMessage) -> [UInt8] {
-        query.response(answers: [DNSRecord(name: query.name, type: 1, data: answerAddress)])
+        if truncate { return query.response(truncated: true) }
+        return query.response(answers: [DNSRecord(name: query.name, type: 1, data: answerAddress)])
     }
     func receiveTCP(_ connection: NWConnection, stream: DNSStream) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65537) { data, _, _, _ in
@@ -128,5 +132,36 @@ final class TransportTests: XCTestCase {
                 XCTFail("a scope pointing back to the listener must not use the default")
             } catch DNSError.closed {}
         }
+    }
+
+    func testPrivateTCPRetryUsesTheSameScopeWhenTheNetworkChanges() async throws {
+        let standard = try LocalDNSServer(tcp: true)
+        defer { standard.stop() }
+        let privateUDP = try LocalDNSServer(tcp: false, ipv6: true, truncate: true)
+        defer { privateUDP.stop() }
+        let privateTCP = try LocalDNSServer(tcp: true, ipv6: true, answerAddress: [192, 0, 2, 43], port: privateUDP.port)
+        defer { privateTCP.stop() }
+        let record = RecoveryRecord(createdAt: "", services: [], upstream: "192.0.2.1",
+                                    upstreamPort: standard.port.rawValue, resolverState: "")
+        var snapshots = 0
+        let upstream = NetworkDNS(record: record, listenPort: 53, timeout: 0.5) {
+            snapshots += 1
+            var state: [String: [String: Any]] = [
+                "State:/Network/Global/IPv4": ["PrimaryService": "ethernet"],
+                "State:/Network/Service/ethernet/DNS": ["ServerAddresses": ["127.0.0.1"]],
+            ]
+            if snapshots == 1 {
+                state["State:/Network/Service/tunnel/DNS"] = [
+                    "SupplementalMatchDomains": ["vpn.example"], "ServerAddresses": ["::1"],
+                    "ServerPort": Int(privateUDP.port.rawValue),
+                ]
+            }
+            return state
+        }
+        let policy = try Policy(data: Data(#"{"adult":[],"custom":[],"allow":[],"safesearch":{}}"#.utf8))
+        let query = DNSMessage.query("app.vpn.example", type: 1)
+        let reply = try DNSMessage(await Resolver(policy: policy).resolve(query, tcp: false, upstream: upstream))
+        XCTAssertEqual(reply.answers.first?.data, [192, 0, 2, 43])
+        XCTAssertEqual(snapshots, 1)
     }
 }

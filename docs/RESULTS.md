@@ -112,4 +112,6 @@ Issue #10 used a disposable Tart clone of the macOS 26.6.2 (25G83) arm64 image a
 | Reboot | Launchd started a new daemon. The blocked fixture returned NXDOMAIN before the lab DNS servers started. Allowed DNS resumed when the guest fixtures came back. |
 | Rollback | Uninstall restored automatic DNS and the exact recorded `scutil --dns` output. A second installation with two explicit DNS servers used the saved first server, then restored the server order and search domains exactly. The daemon stopped and the service reported uninstalled. |
 
-The split-DNS fixture exercises macOS resolver state, with no vendor VPN client. Vendor compatibility and traffic sent around the loopback filter remain acceptance items.
+A loopback regression changed the active route after a truncated private UDP reply and verified that the TCP retry stayed on the private resolver. The final guest build also sent an explicitly scoped `corp.local` lookup to the IPv6 fixture and kept an ordinary Bonjour name out of unicast DNS.
+
+The split-DNS fixture exercises macOS resolver state. Vendor VPN compatibility, physical Ethernet-to-Wi-Fi handoff, IPv6 as the VM's default resolver, and traffic sent around the loopback filter remain acceptance items.
