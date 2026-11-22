@@ -8,6 +8,7 @@ import contextlib
 import hashlib
 import json
 import os
+import select
 from pathlib import Path
 import shutil
 import signal
@@ -17,7 +18,7 @@ import subprocess
 import tempfile
 import unittest
 
-from dnslib import RCODE, QTYPE, RD, RR, DNSRecord
+from dnslib import A, CNAME, RCODE, QTYPE, RD, RR, DNSRecord
 
 from clearpath.dns import reply, serve
 from test_filter import Fixture
@@ -44,9 +45,23 @@ def build_filter():
 
 class LiveFixture(Fixture):
     """The harness fixture plus HTTPS answers and deliberately broken upstream replies."""
+    safe_redirect = None
+
     def handle(self, packet, tcp=False):
         query = DNSRecord.parse(packet)
         name = str(query.q.qname)
+        if self.safe_redirect and name == "forcesafesearch.google.com.":
+            self.calls.append((name, query.q.qtype, tcp))
+            out = reply(query)
+            out.add_answer(RR(name, QTYPE.CNAME, rdata=CNAME(self.safe_redirect)))
+            out.add_answer(RR(self.safe_redirect, QTYPE.A, rdata=A("192.0.2.99")))
+            return out.pack()
+        bad_rdata = {"short-https.example.": b"\x00", "pointer-https.example.": b"\x00\x01\xc0\x0c"}.get(name)
+        if bad_rdata is not None:
+            self.calls.append((name, query.q.qtype, tcp))
+            out = reply(query)
+            out.add_answer(RR(name, query.q.qtype, rdata=RD(bad_rdata)))
+            return out.pack()
         if name == "malformed.example.":
             self.calls.append((name, query.q.qtype, tcp))
             return packet[:2] + b"\x81\x80\x00\x01\x00\x01garbage"
@@ -89,6 +104,10 @@ class SwiftFilterProcess(unittest.TestCase):
                 "--upstream-port", str(upstream_port or self.upstream_port), "--listen", listen, "--port", "0", *extra]
         proc = subprocess.Popen(args, cwd=self.tmp, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        ready, _, _ = select.select([proc.stdout], [], [], 10)
+        if not ready:
+            proc.kill()
+            self.fail("clearpath-filter printed no startup line within 10 seconds")
         line = self.startup = proc.stdout.readline()
         self.assertTrue(line.startswith("Clearpath filter on "), line + proc.stderr.read() if proc.poll() is not None else line)
         return proc, int(line.split(";")[0].rsplit(":", 1)[1])
@@ -183,6 +202,42 @@ class SwiftFilterProcess(unittest.TestCase):
                 self.assertEqual((response.header.rcode, response.rr), (RCODE.SERVFAIL, []), (name, tcp))
         self.stop(proc)
 
+    def test_safe_target_redirected_to_search_or_blocked_name_fails_closed(self):
+        for redirect in ("www.google.com", "adult.example"):
+            self.fixture.safe_redirect = redirect
+            proc, port = self.launch()
+            for tcp in (False, True):
+                response = self.ask(port, "www.google.com", "A", tcp)
+                self.assertEqual((response.header.rcode, response.rr), (RCODE.SERVFAIL, []), (redirect, tcp))
+            self.stop(proc)
+
+    def test_malformed_https_and_svcb_replies_are_servfail(self):
+        proc, port = self.launch()
+        for name in ("short-https.example", "pointer-https.example"):
+            for kind in ("HTTPS", "SVCB"):
+                for tcp in (False, True):
+                    response = self.ask(port, name, kind, tcp)
+                    self.assertEqual((response.header.rcode, response.rr), (RCODE.SERVFAIL, []), (name, kind, tcp))
+        self.stop(proc)
+
+    def test_slow_answers_outlive_the_idle_timeout_and_idle_connections_close(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent:
+            silent.bind(("127.0.0.1", 0))
+            proc, port = self.launch("--timeout", "1", "--idle-timeout", "0.3", upstream_port=silent.getsockname()[1])
+            self.assertEqual(self.ask(port, "github.com", "A").header.rcode, RCODE.SERVFAIL)
+            queries = [DNSRecord.question(name) for name in ("github.com", "www.google.com")]
+            with socket.create_connection(("127.0.0.1", port), timeout=5) as conn:
+                conn.sendall(b"".join(struct.pack("!H", len(q.pack())) + q.pack() for q in queries))
+                stream = conn.makefile("rb")
+                for query in queries:
+                    header = stream.read(2)
+                    self.assertEqual(len(header), 2, "connection closed before every slow answer was written")
+                    response = DNSRecord.parse(stream.read(struct.unpack("!H", header)[0]))
+                    self.assertEqual((response.header.id, response.header.rcode), (query.header.id, RCODE.SERVFAIL))
+            with socket.create_connection(("127.0.0.1", port), timeout=3) as idle:
+                self.assertEqual(idle.recv(10), b"")  # closed by the idle timeout, not the 3 s socket timeout
+            self.stop(proc)
+
     def test_malformed_client_queries_get_formerr_and_service_continues(self):
         proc, port = self.launch()
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -229,6 +284,7 @@ class SwiftFilterProcess(unittest.TestCase):
             ["--listen", "192.0.2.1", "--port", "0"],
             ["--port", "53"],
             ["--port", "1023"],
+            ["--port", "0", "--idle-timeout", "0"],
         )
         for extra in refused:
             result = subprocess.run(base + extra, cwd=self.tmp, capture_output=True, text=True, timeout=5)

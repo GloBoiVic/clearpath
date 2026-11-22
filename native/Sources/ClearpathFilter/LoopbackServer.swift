@@ -8,7 +8,8 @@ import ClearpathCore
 final class LoopbackServer: @unchecked Sendable {
     static let maxConnections = 64
     static let maxInFlight = 128
-    static let idleTimeout: TimeInterval = 10
+    /// A connection with no query being answered is closed after this long.
+    let idleTimeout: TimeInterval
 
     private let queue = DispatchQueue(label: "io.clearpath.filter.server")
     private let resolver: Resolver
@@ -17,8 +18,8 @@ final class LoopbackServer: @unchecked Sendable {
     private var connections: [ObjectIdentifier: Client] = [:]
     private var inFlight = 0
 
-    init(resolver: Resolver, upstream: any DNSUpstream) {
-        self.resolver = resolver; self.upstream = upstream
+    init(resolver: Resolver, upstream: any DNSUpstream, idleTimeout: TimeInterval) {
+        self.resolver = resolver; self.upstream = upstream; self.idleTimeout = idleTimeout
     }
 
     /// Binds UDP then TCP on the same port. With port 0 the UDP port is picked by the
@@ -81,6 +82,7 @@ final class LoopbackServer: @unchecked Sendable {
         let tcp: Bool
         var stream = DNSStream()
         var timer: DispatchSourceTimer?
+        var busy = 0  // queries received and not yet answered; the idle timer never closes these
         init(connection: NWConnection, tcp: Bool) { self.connection = connection; self.tcp = tcp }
     }
 
@@ -110,8 +112,11 @@ final class LoopbackServer: @unchecked Sendable {
     private func touch(_ client: Client, key: ObjectIdentifier) {
         client.timer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.setEventHandler { [weak self] in self?.close(key) }
-        timer.schedule(deadline: .now() + Self.idleTimeout)
+        timer.setEventHandler { [weak self] in
+            guard let self, let client = self.connections[key] else { return }
+            if client.busy > 0 { self.touch(client, key: key) } else { self.close(key) }
+        }
+        timer.schedule(deadline: .now() + idleTimeout)
         timer.resume()
         client.timer = timer
     }
@@ -122,9 +127,13 @@ final class LoopbackServer: @unchecked Sendable {
             if error != nil { self.close(key); return }
             if let data {
                 self.touch(client, key: key)
+                client.busy += 1
                 self.answer(Array(data), tcp: false) { [weak self] answer in
                     guard let self, self.connections[key] != nil else { return }
-                    client.connection.send(content: Data(answer), completion: .contentProcessed { _ in })
+                    client.connection.send(content: Data(answer), completion: .contentProcessed { [weak self] _ in
+                        client.busy -= 1
+                        if let self, self.connections[key] != nil { self.touch(client, key: key) }
+                    })
                 }
             }
             self.receiveUDP(client, key: key)
@@ -137,10 +146,11 @@ final class LoopbackServer: @unchecked Sendable {
             let messages: [[UInt8]]
             do { messages = try data.map { try client.stream.append(Array($0)) } ?? [] }
             catch { self.close(key); return }  // bad framing or oversized buffer
-            if !messages.isEmpty { self.touch(client, key: key) }
+            if !messages.isEmpty { client.busy += 1 }
             // Messages on one connection are answered in order, then reading resumes.
             self.answerInOrder(messages, client: client, key: key) { [weak self] in
                 guard let self, self.connections[key] != nil else { return }
+                if !messages.isEmpty { client.busy -= 1; self.touch(client, key: key) }
                 if error != nil || complete {
                     // Close only after replies are written; RFC 7766 lets a client half-close.
                     client.connection.send(content: nil, isComplete: true, completion: .contentProcessed { [weak self] _ in self?.close(key) })

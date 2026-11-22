@@ -7,7 +7,7 @@ import ClearpathNetwork
 // It never changes the Mac's DNS settings and forwards only to the explicit upstream IP.
 
 let usage = """
-usage: clearpath-filter --policy FILE --upstream IP [--upstream-port N] [--listen 127.0.0.1|::1] [--port N] [--timeout SECONDS]
+usage: clearpath-filter --policy FILE --upstream IP [--upstream-port N] [--listen 127.0.0.1|::1] [--port N] [--timeout SECONDS] [--idle-timeout SECONDS]
   --port 0 picks a free port; otherwise 1024-65535. The listener is loopback only.
 
 """
@@ -17,10 +17,10 @@ func fail(_ message: String, code: Int32 = 2) -> Never {
     exit(code)
 }
 
-var options: [String: String] = ["--upstream-port": "53", "--listen": "127.0.0.1", "--port": "1053", "--timeout": "4"]
+var options: [String: String] = ["--upstream-port": "53", "--listen": "127.0.0.1", "--port": "1053", "--timeout": "4", "--idle-timeout": "10"]
 var arguments = CommandLine.arguments.dropFirst()
 while let flag = arguments.popFirst() {
-    guard ["--policy", "--upstream", "--upstream-port", "--listen", "--port", "--timeout"].contains(flag),
+    guard ["--policy", "--upstream", "--upstream-port", "--listen", "--port", "--timeout", "--idle-timeout"].contains(flag),
           let value = arguments.popFirst() else { fail(usage) }
     options[flag] = value
 }
@@ -31,6 +31,7 @@ guard let port = UInt16(options["--port"]!), port == 0 || port >= 1024 else { fa
 guard let upstreamPort = UInt16(options["--upstream-port"]!), upstreamPort > 0,
       let upstreamPortValue = NWEndpoint.Port(rawValue: upstreamPort) else { fail("--upstream-port must be 1-65535.") }
 guard let timeout = Double(options["--timeout"]!), (0.01...30).contains(timeout) else { fail("--timeout must be 0.01-30 seconds.") }
+guard let idleTimeout = Double(options["--idle-timeout"]!), (0.01...300).contains(idleTimeout) else { fail("--idle-timeout must be 0.01-300 seconds.") }
 
 // An IP literal only: resolving a hostname here would recurse through the system resolver.
 let upstreamHost: NWEndpoint.Host
@@ -46,7 +47,7 @@ do { policy = try Policy(data: Data(contentsOf: URL(fileURLWithPath: policyPath)
 catch { fail("Policy rejected: \(type(of: error)).\(error)", code: 1) }
 
 let upstream = NetworkUpstream(endpoint: .hostPort(host: upstreamHost, port: upstreamPortValue), timeout: timeout)
-let server = LoopbackServer(resolver: Resolver(policy: policy), upstream: upstream)
+let server = LoopbackServer(resolver: Resolver(policy: policy), upstream: upstream, idleTimeout: idleTimeout)
 let actualPort: UInt16
 do { actualPort = try server.start(host: listen, port: port) }
 catch { fail("Could not listen on \(listen):\(port).", code: 1) }

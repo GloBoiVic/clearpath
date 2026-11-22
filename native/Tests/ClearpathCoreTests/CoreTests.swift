@@ -10,7 +10,8 @@ func changedPolicy(_ change: (inout [String: Any]) -> Void) throws -> Policy {
 }
 
 actor Fixture: DNSUpstream {
-    enum Mode { case normal, fail, noAAAA, truncated, wrongID, wrongQuestion, blockedAlias, safeAlias, big, partialTC }
+    enum Mode { case normal, fail, noAAAA, truncated, wrongID, wrongQuestion, blockedAlias, safeAlias, big, partialTC,
+             safeRedirect, safeBlocked, safeFork, safeLoop, safeChain }
     var calls: [(String?, UInt16, Bool)] = []
     let mode: Mode
     init(_ mode: Mode = .normal) { self.mode = mode }
@@ -32,6 +33,15 @@ actor Fixture: DNSUpstream {
             records = [DNSRecord(name: query.name, type: 5, cname: DNSName(mode == .blockedAlias ? "adult.example" : "www.google.com"))]
         }
         if mode == .big { records = (0..<20).map { _ in rr } }
+        let edge = DNSName("edge.example"), cname = { (from: DNSName, to: String) in DNSRecord(name: from, type: 5, cname: DNSName(to)) }
+        switch mode {
+        case .safeRedirect: records = [cname(query.name, "www.google.com"), DNSRecord(name: DNSName("www.google.com"), type: 1, data: [192,0,2,99])]
+        case .safeBlocked: records = [cname(query.name, "adult.example"), DNSRecord(name: DNSName("adult.example"), type: 1, data: [192,0,2,99])]
+        case .safeFork: records = [cname(query.name, "edge.example"), cname(query.name, "other.example"), DNSRecord(name: edge, type: 1, data: [192,0,2,7])]
+        case .safeLoop: records = [cname(query.name, "edge.example"), cname(edge, query.name.host!)]
+        case .safeChain: records = [cname(query.name, "edge.example"), DNSRecord(name: edge, type: 1, data: [192,0,2,7]), DNSRecord(name: DNSName("stray.example"), type: 1, data: [192,0,2,99])]
+        default: break
+        }
         var response = query.response(answers: records)
         if mode == .wrongID { response[0] ^= 1 }
         return response
@@ -118,6 +128,19 @@ final class ResolverTests: XCTestCase {
         let result = try DNSMessage(await resolver.resolve(DNSMessage.query("www.google.com", type: 28), tcp: false, upstream: noAAAA))
         XCTAssertEqual(result.rcode, 0); XCTAssertEqual(result.answers.count, 1); XCTAssertEqual(result.answers[0].type, 5)
     }
+    func testSafeTargetRedirectsFailClosed() async throws {
+        let resolver = Resolver(policy: try examplePolicy())
+        for mode: Fixture.Mode in [.safeRedirect, .safeBlocked, .safeFork, .safeLoop] {
+            for tcp in [false, true] {
+                let result = try DNSMessage(await resolver.resolve(DNSMessage.query("www.google.com", type: 1), tcp: tcp, upstream: Fixture(mode)))
+                XCTAssertEqual(result.rcode, 2, "\(mode)"); XCTAssertTrue(result.answers.isEmpty)
+            }
+        }
+        let chained = try DNSMessage(await resolver.resolve(DNSMessage.query("www.google.com", type: 1), tcp: false, upstream: Fixture(.safeChain)))
+        XCTAssertEqual(chained.rcode, 0)
+        XCTAssertEqual(chained.answers.map(\.type), [5, 5, 1])
+        XCTAssertEqual(chained.answers.last?.data, [192,0,2,7])
+    }
     func testSafeHTTPSHintsAndCNAME() async throws {
         let resolver = Resolver(policy: try examplePolicy()), fixture = Fixture()
         for type: UInt16 in [64,65,16] {
@@ -189,6 +212,18 @@ final class WireTests: XCTestCase {
         XCTAssertThrowsError(try DNSMessage([0,1,1,0,0,1,0,0,0,0,0,0,0xC0,0x0C,0,1,0,1]))
         XCTAssertThrowsError(try DNSMessage(DNSMessage.query("example.com", type: 1) + [0]))
     }
+    func testServiceBindingRDATAValidated() throws {
+        func response(_ rdata: [UInt8], type: UInt16) throws -> DNSMessage {
+            let query = try DNSMessage(DNSMessage.query("example.com", type: type))
+            return try DNSMessage(query.response(answers: [DNSRecord(name: query.name, type: type, data: rdata)]))
+        }
+        for type: UInt16 in [64, 65] {
+            XCTAssertNoThrow(try response([0,1,0], type: type))
+            XCTAssertNoThrow(try response([0,1,3,99,100,110,7,101,120,97,109,112,108,101,0, 0,1,0,3,2,104,50], type: type))  // cdn.example, alpn=h2
+            let bad: [[UInt8]] = [[], [0], [0,1], [0,1,0xC0,0x0C], [0,1,5,1,2], [0,1,0, 0,1,0,9,1], [0,1,0, 0,1], [0,1,0, 0,3,0,0, 0,1,0,0]]
+            for rdata in bad { XCTAssertThrowsError(try response(rdata, type: type), "\(rdata)") }
+        }
+    }
     func testStreamFragmentationAndPipeline() throws {
         let packet = DNSMessage.query("example.com", type: 28)
         let bytes = try DNSStream.frame(packet) + DNSStream.frame(packet)
@@ -213,4 +248,3 @@ final class WireTests: XCTestCase {
         }
     }
 }
-

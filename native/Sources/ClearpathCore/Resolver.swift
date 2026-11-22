@@ -23,16 +23,22 @@ public struct Resolver: Sendable {
                     let safe = try DNSMessage(DNSMessage.query(target, type: query.type))
                     let result = try await fetch(safe, tcp: tcp, upstream: upstream)
                     guard result.rcode == 0 else { return query.response(code: 2) }
-                    var relevant: Set<String> = [target]
-                    for _ in 0..<16 {
-                        let before = relevant.count
-                        for rr in result.answers where rr.type == 5 && rr.klass == 1 {
-                            if let owner = rr.name.host, relevant.contains(owner), let alias = rr.cname?.host { relevant.insert(alias) }
-                        }
-                        if relevant.count == before { break }
+                    // Follow exactly one CNAME chain from the safe target. A fork, a loop, an
+                    // unreadable alias, or a redirect to a blocked or protected search name could
+                    // lead back to an ordinary endpoint, so each fails closed.
+                    let aliases = result.answers.filter { $0.type == 5 && $0.klass == 1 }
+                    var chain = [target]
+                    while let last = chain.last {
+                        let next = aliases.filter { $0.name.host == last }
+                        if next.isEmpty { break }
+                        guard next.count == 1, let alias = next[0].cname?.host, !chain.contains(alias), chain.count < 16,
+                              policy.decide(alias) == .allow else { return query.response(code: 2) }
+                        chain.append(alias)
                     }
+                    let owners = Set(chain.dropLast()), final = chain.last!
                     records += result.answers.filter { rr in
-                        rr.klass == 1 && (rr.type == query.type || rr.type == 5) && rr.name.host.map(relevant.contains) == true
+                        guard rr.klass == 1, let owner = rr.name.host else { return false }
+                        return rr.type == 5 ? owners.contains(owner) : rr.type == query.type && owner == final
                     }
                 }
                 response = query.response(answers: records)

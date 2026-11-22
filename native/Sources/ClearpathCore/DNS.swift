@@ -76,7 +76,30 @@ private struct DNSReader {
         i = start
         let data = try take(size)
         if (type == 1 && size != 4) || (type == 28 && size != 16) { throw DNSError.malformed }
+        if (type == 64 || type == 65) && !Self.validServiceBinding(data) { throw DNSError.malformed }
         return DNSRecord(name: owner, type: type, klass: klass, ttl: ttl, data: data, cname: alias)
+    }
+    /// SVCB/HTTPS RDATA (RFC 9460): priority, an uncompressed target name, then
+    /// key/length/value parameters in strictly increasing key order, all inside RDATA.
+    static func validServiceBinding(_ data: [UInt8]) -> Bool {
+        var i = 2, length = 1
+        while true {
+            guard i < data.count else { return false }
+            let n = Int(data[i]); i += 1
+            if n == 0 { break }
+            length += n + 1
+            guard n <= 63, n <= data.count - i, length <= 255 else { return false }  // n > 63 also rejects pointers
+            i += n
+        }
+        var previous = -1
+        while i < data.count {
+            guard data.count - i >= 4 else { return false }
+            let key = Int(data[i]) << 8 | Int(data[i+1]), size = Int(data[i+2]) << 8 | Int(data[i+3])
+            i += 4
+            guard key > previous, size <= data.count - i else { return false }
+            previous = key; i += size
+        }
+        return true
     }
 }
 
