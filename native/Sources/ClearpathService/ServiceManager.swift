@@ -9,11 +9,13 @@ public struct ServicePaths: Sendable {
     public init(root: URL = URL(fileURLWithPath: "/")) { self.root = root }
     public var supportDirectory: URL { root.appendingPathComponent("Library/Application Support/Clearpath") }
     public var filter: URL { supportDirectory.appendingPathComponent("clearpath-filter") }
+    public var controlTool: URL { supportDirectory.appendingPathComponent("clearpath-service") }
     public var policy: URL { supportDirectory.appendingPathComponent("policy.json") }
     public var recovery: URL { supportDirectory.appendingPathComponent("recovery.json") }
+    var internetRecovery: URL { supportDirectory.appendingPathComponent("internet-recovery.json") }
     public var daemonPlist: URL { root.appendingPathComponent("Library/LaunchDaemons/\(Self.label).plist") }
     /// Clearpath's files only, in removal order: the recovery record goes last.
-    var owned: [URL] { [daemonPlist, filter, policy, recovery] }
+    var owned: [URL] { [daemonPlist, filter, controlTool, policy, internetRecovery, recovery] }
 }
 
 /// One network service's DNS setting. No servers means automatic (DHCP) DNS.
@@ -45,6 +47,10 @@ public struct ServiceStatus: Codable, Equatable, Sendable {
     public let answering: Bool
     public let dnsPointsToFilter: Bool
     public let services: [ServiceDNS]
+    public internal(set) var recovery: InternetRecoveryStatus?
+    public internal(set) var restoreEvent: InternetRestoreEvent?
+    public internal(set) var restoreAvailable: Bool? = nil
+    public internal(set) var defaultResolverUsesFilter: Bool? = nil
 }
 
 public enum ServiceError: Error, Equatable, CustomStringConvertible {
@@ -77,7 +83,7 @@ public final class ServiceManager {
 
     // MARK: Install
 
-    public func install(filter: URL, policy: URL, upstream: String?, upstreamPort: UInt16) throws {
+    public func install(filter: URL, policy: URL, upstream: String?, upstreamPort: UInt16, controlTool: URL? = nil) throws {
         guard system.isRoot else { throw ServiceError.refused("Install must run as root (sudo).") }
         let fm = FileManager.default
         guard !fm.fileExists(atPath: paths.recovery.path), !fm.fileExists(atPath: paths.daemonPlist.path) else {
@@ -86,6 +92,7 @@ public final class ServiceManager {
         let filterData = try readRegularFile(filter, what: "filter")
         guard fm.isExecutableFile(atPath: filter.path) else { throw ServiceError.refused("The filter at \(filter.path) is not executable.") }
         let policyData = try readRegularFile(policy, what: "policy")
+        let controlData = try controlTool.map { try readRegularFile($0, what: "service tool") }
         do { _ = try Policy(data: policyData) } catch { throw ServiceError.refused("Policy rejected: \(error).") }
         guard upstreamPort > 0 else { throw ServiceError.refused("--upstream-port must be 1-65535.") }
         guard system.portIsFree(Self.listenPort) else {
@@ -116,28 +123,36 @@ public final class ServiceManager {
         let record = RecoveryRecord(locationID: location.id, createdAt: ISO8601DateFormatter().string(from: Date()), services: services,
                                     upstream: chosen, upstreamPort: upstreamPort, resolverState: resolver.output)
         try makeDirectory(paths.supportDirectory)
-        try writeFile(try Self.encoder.encode(record), to: paths.recovery, mode: 0o644, exclusive: true)
-        log("Recorded DNS for \(services.count) network service(s) in \(paths.recovery.path).")
+        try withServiceLock {
+            guard !fm.fileExists(atPath: paths.daemonPlist.path), !fm.fileExists(atPath: paths.internetRecovery.path) else {
+                throw ServiceError.refused("An earlier Clearpath install is present. Run uninstall first.")
+            }
+            try writeFile(try Self.encoder.encode(record), to: paths.recovery, mode: 0o644, exclusive: true)
+            log("Recorded DNS for \(services.count) network service(s) in \(paths.recovery.path).")
 
-        // From here on, any failure is rolled back from the record.
-        do {
-            try writeFile(filterData, to: paths.filter, mode: 0o755)
-            try writeFile(policyData, to: paths.policy, mode: 0o644)
-            try makeDirectory(paths.daemonPlist.deletingLastPathComponent())
-            try writeFile(try daemonPlist(upstream: upstream, upstreamPort: upstreamPort), to: paths.daemonPlist, mode: 0o644)
-            try check(system.run(.launchctl, ["bootstrap", "system", paths.daemonPlist.path]), "launchctl bootstrap")
-            try waitUntilAnswering()
-            log("Filter answering on \(Self.listenAddress):\(Self.listenPort).")
-            for service in services {
-                try setDNS(service.name, to: [Self.listenAddress])
+            // From here on, any failure is rolled back from the record.
+            do {
+                try writeFile(filterData, to: paths.filter, mode: 0o755)
+                if let controlData { try writeFile(controlData, to: paths.controlTool, mode: 0o755) }
+                try writeFile(policyData, to: paths.policy, mode: 0o644)
+                try makeDirectory(paths.daemonPlist.deletingLastPathComponent())
+                try writeFile(try daemonPlist(upstream: upstream, upstreamPort: upstreamPort), to: paths.daemonPlist, mode: 0o644)
+                try check(system.run(.launchctl, ["bootstrap", "system", paths.daemonPlist.path]), "launchctl bootstrap")
+                guard waitForFilter() else {
+                    throw ServiceError.failed("The filter did not answer on \(Self.listenAddress):\(Self.listenPort) within \(Int(Self.readyTimeout)) seconds.")
+                }
+                log("Filter answering on \(Self.listenAddress):\(Self.listenPort).")
+                for service in services {
+                    try setDNS(service.name, to: [Self.listenAddress])
+                }
+                log("DNS for every network service now points at the filter.")
+            } catch {
+                log("Install failed: \(error) Rolling back.")
+                do { try uninstallLocked() } catch let rollback {
+                    throw ServiceError.failed("Install failed (\(error)) and rollback failed (\(rollback)). The recovery record is kept at \(paths.recovery.path).")
+                }
+                throw ServiceError.failed("Install failed and was rolled back: \(error)")
             }
-            log("DNS for every network service now points at the filter.")
-        } catch {
-            log("Install failed: \(error) Rolling back.")
-            do { try uninstall() } catch let rollback {
-                throw ServiceError.failed("Install failed (\(error)) and rollback failed (\(rollback)). The recovery record is kept at \(paths.recovery.path).")
-            }
-            throw ServiceError.failed("Install failed and was rolled back: \(error)")
         }
     }
 
@@ -147,15 +162,13 @@ public final class ServiceManager {
     /// Clearpath's files. Safe to run after a partial install and to run twice.
     public func uninstall() throws {
         guard system.isRoot else { throw ServiceError.refused("Uninstall must run as root (sudo).") }
+        try makeDirectory(paths.supportDirectory)
+        try withServiceLock { try uninstallLocked() }
+    }
+
+    private func uninstallLocked() throws {
         if let record = try readRecord() {
-            let location = try system.networkLocation()
-            if let original = record.locationID, location.id != original {
-                throw ServiceError.refused("Switch back to the macOS network location where Clearpath was installed, then run uninstall again.")
-            }
-            try restoreDNS(record.services, ids: location.serviceIDs)
-            if let stuck = try readServices().first(where: { $0.servers.contains(Self.listenAddress) }) {
-                throw ServiceError.failed("\(stuck.name) still uses the filter. Restore its DNS before stopping Clearpath.")
-            }
+            try restoreOriginalDNS(record)
         } else if let stuck = try readServices().first(where: { $0.servers.contains(Self.listenAddress) }),
                   FileManager.default.fileExists(atPath: paths.daemonPlist.path) || daemonLoaded() {
             // Without the record the original setting is unknown, and stopping the daemon would cut DNS.
@@ -179,11 +192,21 @@ public final class ServiceManager {
     public func status() throws -> ServiceStatus {
         let services = try readServices()
         let pid = daemonPID()
-        return ServiceStatus(installed: FileManager.default.fileExists(atPath: paths.recovery.path),
+        var status = ServiceStatus(installed: FileManager.default.fileExists(atPath: paths.recovery.path),
                              daemonLoaded: pid != nil || daemonLoaded(), pid: pid,
                              answering: system.filterAnswers(port: Self.listenPort),
                              dnsPointsToFilter: !services.isEmpty && services.allSatisfy { $0.servers == [Self.listenAddress] },
                              services: services)
+        if status.installed {
+            status.restoreAvailable = FileManager.default.isExecutableFile(atPath: paths.controlTool.path)
+            try applyRecoveryStatus(to: &status)
+            if status.dnsPointsToFilter && status.answering {
+                let resolver = try system.run(.scutil, ["--dns"])
+                try check(resolver, "scutil --dns")
+                status.defaultResolverUsesFilter = Self.primaryNameservers(in: resolver.output) == [Self.listenAddress]
+            }
+        }
+        return status
     }
 
     // MARK: DNS settings
@@ -227,28 +250,58 @@ public final class ServiceManager {
     func restoreDNS(_ recorded: [ServiceDNS], ids: [String: String]) throws {
         let present = try readServices(ids: ids)
         for service in recorded {
-            let current = present.first { entry in
-                if let id = service.id { return entry.id == id }
-                return entry.name == service.name
+            guard let current = matchingService(service, in: present) else {
+                log("\(service.name) no longer exists; nothing to restore.")
+                continue
             }
-            guard let current else { log("\(service.name) no longer exists; nothing to restore."); continue }
+            guard current.servers != service.servers else { continue }
             try setDNS(current.name, to: service.servers)
             log("Restored DNS for \(current.name): \(service.servers.isEmpty ? "automatic" : service.servers.joined(separator: " ")).")
         }
     }
 
+    func matchingService(_ recorded: ServiceDNS, in current: [ServiceDNS]) -> ServiceDNS? {
+        current.first { entry in
+            if let id = recorded.id { return entry.id == id }
+            return entry.name == recorded.name
+        }
+    }
+
+    func restoreOriginalDNS(_ record: RecoveryRecord) throws {
+        let location = try recoveryLocation(record)
+        try restoreDNS(record.services, ids: location.serviceIDs)
+        if let stuck = try readServices().first(where: { $0.servers.contains(Self.listenAddress) }) {
+            throw ServiceError.failed("\(stuck.name) still uses the filter. Restore its DNS before stopping Clearpath.")
+        }
+    }
+
+    func recoveryLocation(_ record: RecoveryRecord) throws -> NetworkLocation {
+        let location = try system.networkLocation()
+        if let original = record.locationID, location.id != original {
+            throw ServiceError.refused("Switch back to the macOS network location where Clearpath was installed, then try again.")
+        }
+        return location
+    }
+
     /// The first usable nameserver of the default resolver in `scutil --dns` output.
     static func primaryNameserver(in output: String) -> String? {
+        primaryNameservers(in: output).first { address in
+            guard let host = NetworkDNS.resolverHost(address) else { return false }
+            return !NetworkDNS.isLoopback(host)
+        }
+    }
+
+    static func primaryNameservers(in output: String) -> [String] {
         var inFirst = false
+        var addresses: [String] = []
         for raw in output.split(separator: "\n") {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("DNS configuration (for scoped") { break }
             if line.hasPrefix("resolver #") { if inFirst { break }; inFirst = line == "resolver #1"; continue }
             guard inFirst, line.hasPrefix("nameserver["), let colon = line.range(of: " : ") else { continue }
-            let address = String(line[colon.upperBound...])
-            if let host = NetworkDNS.resolverHost(address), !NetworkDNS.isLoopback(host) { return address }
+            addresses.append(String(line[colon.upperBound...]))
         }
-        return nil
+        return addresses
     }
 
     /// AF_INET or AF_INET6 for an IP literal, else nil.
@@ -274,13 +327,13 @@ public final class ServiceManager {
         return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
     }
 
-    func waitUntilAnswering() throws {
+    func waitForFilter() -> Bool {
         var waited = 0.0
         while waited < Self.readyTimeout {
-            if system.filterAnswers(port: Self.listenPort) { return }
+            if system.filterAnswers(port: Self.listenPort) { return true }
             system.pause(seconds: 0.25); waited += 0.25
         }
-        throw ServiceError.failed("The filter did not answer on \(Self.listenAddress):\(Self.listenPort) within \(Int(Self.readyTimeout)) seconds.")
+        return system.filterAnswers(port: Self.listenPort)
     }
 
     func daemonLoaded() -> Bool {
@@ -301,6 +354,7 @@ public final class ServiceManager {
     static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
         return encoder
     }()
 
@@ -324,6 +378,26 @@ public final class ServiceManager {
     func makeDirectory(_ url: URL) throws {
         if isSymlink(url) { throw ServiceError.failed("\(url.path) is a symbolic link; refusing to write through it.") }
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+    }
+
+    // Keep install, recovery and uninstall from interleaving. The directory itself is the
+    // lock so uninstall needn't retain a file. Check its identity after acquiring the lock.
+    func withServiceLock(_ operation: () throws -> Void) throws {
+        let directory = paths.supportDirectory.path
+        let fd = open(directory, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard fd >= 0 else { throw ServiceError.failed("Could not open the Clearpath service directory.") }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+            throw ServiceError.refused("A Clearpath service change is already in progress. Try again.")
+        }
+        var opened = stat()
+        var current = stat()
+        guard fstat(fd, &opened) == 0, lstat(directory, &current) == 0,
+              opened.st_dev == current.st_dev, opened.st_ino == current.st_ino,
+              opened.st_uid == geteuid(), opened.st_mode & 0o022 == 0 else {
+            throw ServiceError.failed("The Clearpath service directory is not owned and controlled by the installer.")
+        }
+        try operation()
     }
 
     func isSymlink(_ url: URL) -> Bool {

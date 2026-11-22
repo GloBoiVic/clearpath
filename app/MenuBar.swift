@@ -40,8 +40,9 @@ final class SettingsWindow: NSWindow {
 
 /// Owns the shield in the menu bar, the panel it opens and the app's windows.
 /// AppKit replaces SwiftUI's MenuBarExtra, which always drops its panel straight below the icon.
+@MainActor
 final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    private let sample = Sample(rawValue: ProcessInfo.processInfo.environment["CLEARPATH_SAMPLE"] ?? "connected") ?? .unknown
+    private let health = ProtectionHealth()
     private var statusItem: NSStatusItem!
     private var panel: MenuBarPanel!
     private var hosting: NSHostingView<Panel>!
@@ -50,15 +51,13 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            button.image = shieldImage(for: sample)
-            button.setAccessibilityLabel("Clearpath design preview. \(sample.headline). Partner: \(sample.partner)")
             button.target = self
             button.action = #selector(togglePanel)
             button.sendAction(on: [.leftMouseDown])
         }
 
         hosting = NSHostingView(rootView: Panel(
-            sample: sample,
+            health: health,
             openPartnerSettings: { [unowned self] in show("partner-settings", "Partner settings", PartnerSettings()) },
             openSetup: { [unowned self] in show("protection-setup", "Set up protection", ProtectionSetup()) }
         ))
@@ -89,20 +88,46 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
         panel.isReleasedWhenClosed = false
         panel.delegate = self
         panel.onClose = { [unowned self] in statusItem.button?.highlight(false) }
+        health.onStateChange = { [weak self] in self?.protectionStateChanged() }
+        protectionStateChanged()
+        Task { [health] in
+            while !Task.isCancelled {
+                await health.refresh()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
     }
 
     @objc private func togglePanel() {
         if panel.isVisible { panel.orderOut(nil); return }
-        guard let button = statusItem.button, let barWindow = button.window,
-              let screen = barWindow.screen ?? NSScreen.main else { return }
-        let icon = barWindow.convertToScreen(button.convert(button.bounds, to: nil))
-        let size = hosting.fittingSize
-        panel.setFrame(NSRect(origin: panelOrigin(icon: icon, panel: size, screen: screen.visibleFrame), size: size),
-                       display: false)
+        guard positionPanel() else { return }
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.invalidateShadow()
-        button.highlight(true)
+        statusItem.button?.highlight(true)
+        Task { await health.refresh() }
+    }
+
+    private func protectionStateChanged() {
+        statusItem.button?.image = shieldImage(for: health.state)
+        statusItem.button?.setAccessibilityLabel("Clearpath. \(health.state.headline). See Partner settings for partner status.")
+        // SwiftUI recomputes the panel's height when recovery guidance appears or disappears.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, panel.isVisible else { return }
+            _ = positionPanel()
+            panel.invalidateShadow()
+        }
+    }
+
+    @discardableResult
+    private func positionPanel() -> Bool {
+        guard let button = statusItem.button, let barWindow = button.window,
+              let screen = barWindow.screen ?? NSScreen.main else { return false }
+        let icon = barWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        let size = hosting.fittingSize
+        panel.setFrame(NSRect(origin: panelOrigin(icon: icon, panel: size, screen: screen.visibleFrame), size: size),
+                       display: panel.isVisible)
+        return true
     }
 
     // Clicking anywhere outside the panel, including another app, takes focus from it.
@@ -127,6 +152,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
 }
 
 @main
+@MainActor
 enum ClearpathMain {
     static func main() {
         let app = NSApplication.shared

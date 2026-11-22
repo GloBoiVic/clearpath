@@ -1,55 +1,53 @@
 import AppKit
 import SwiftUI
 
-// Only synthetic states are available in the design prototype.
-enum Sample: String {
-    case connected, unknown, failed
-
-    var headline: String {
-        switch self {
-        case .connected: return "Protection is on"
-        case .unknown: return "Protection status unknown"
-        case .failed: return "Protection is offline"
-        }
-    }
-
-    var partner: String { self == .unknown ? "Not connected" : "Connected" }
-}
-
 struct Panel: View {
-    let sample: Sample
+    @ObservedObject var health: ProtectionHealth
     let openPartnerSettings: () -> Void
     let openSetup: () -> Void
     @State private var notice: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Clearpath").font(.headline)
-                Spacer()
-                Text("Design preview").font(.caption).foregroundStyle(.secondary)
-            }
+            Text("Clearpath").font(.headline)
             HStack(spacing: 8) {
-                Image(systemName: sample == .connected ? "checkmark.shield" : "exclamationmark.shield")
-                    .foregroundStyle(sample == .connected ? Color.green : Color.orange)
-                Text(sample.headline)
+                Image(systemName: health.state == .protected ? "checkmark.shield" : "exclamationmark.shield")
+                    .foregroundStyle(health.state == .protected ? Color.green : Color.orange)
+                Text(health.state.headline)
             }
             .font(.system(size: 17, weight: .semibold))
-            row("Partner", icon: "person.2", value: sample.partner)
-            row("Pending requests", icon: "tray", value: "None")
+            row("Partner", icon: "person.2", value: "See settings")
+            row("Pending requests", icon: "tray", value: "Unavailable")
             Divider()
-            if sample == .failed {
-                Text("Restoring internet alerts your partner.").foregroundStyle(.secondary)
+            if health.state == .restored {
+                Text("DNS filtering is off.").foregroundStyle(.secondary)
+            }
+            if health.restoreFailed {
+                Text("Clearpath couldn’t confirm that DNS was restored.").foregroundStyle(.secondary)
+            }
+            if health.state.offersRestore {
+                if health.restoreAvailable {
+                    Text("Administrator approval is required. Clearpath records a restore event for partner alerts.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Restore internet is unavailable for this service installation. See Set up protection.")
+                        .foregroundStyle(.secondary)
+                }
             }
             Button {
-                notice = sample == .failed ? "Restore internet" : "Block a site"
+                if health.state.offersRestore {
+                    Task { await health.restore() }
+                } else {
+                    notice = "Block a site"
+                }
             } label: {
-                Label(sample == .failed ? "Restore internet" : "Block a site",
-                      systemImage: sample == .failed ? "network" : "plus")
+                let restoring = health.state.offersRestore || health.state == .restoring
+                Label(restoring ? "Restore internet" : "Block a site", systemImage: restoring ? "network" : "plus")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .disabled(health.state == .restoring || (health.state.offersRestore && !health.restoreAvailable))
             destination("Blocked sites", icon: "globe")
             destination("Partner settings", icon: "person.crop.circle", action: openPartnerSettings)
             destination("Set up protection", icon: "gearshape", action: openSetup)
@@ -87,18 +85,19 @@ struct Panel: View {
 }
 
 /// The menu-bar mark: a path through a shield, drawn as a template image so the menu bar tints it.
-func shieldImage(for sample: Sample) -> NSImage {
+func shieldImage(for state: ProtectionState) -> NSImage {
+    let filled = state == .protected || state == .offline || state == .interrupted
     let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
         guard let context = NSGraphicsContext.current else { return false }
         let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
-        if let symbol = NSImage(systemSymbolName: sample == .unknown ? "shield" : "shield.fill",
+        if let symbol = NSImage(systemSymbolName: filled ? "shield.fill" : "shield",
                                 accessibilityDescription: nil)?.withSymbolConfiguration(config) {
             let size = symbol.size
             symbol.draw(in: NSRect(x: (18 - size.width) / 2, y: (18 - size.height) / 2,
                                    width: size.width, height: size.height),
                         from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         }
-        if sample == .connected {
+        if state == .protected {
             context.compositingOperation = .destinationOut
             let path = NSBezierPath()
             path.move(to: NSPoint(x: 10, y: 3))
@@ -107,8 +106,8 @@ func shieldImage(for sample: Sample) -> NSImage {
             path.lineWidth = 1.4
             path.stroke()
         } else {
-            if sample == .failed { context.compositingOperation = .destinationOut }
-            let mark = NSAttributedString(string: sample == .failed ? "!" : "?", attributes: [
+            if filled { context.compositingOperation = .destinationOut }
+            let mark = NSAttributedString(string: state == .unknown ? "?" : "!", attributes: [
                 .font: NSFont.systemFont(ofSize: 9, weight: .bold), .foregroundColor: NSColor.black,
             ])
             let size = mark.size()
