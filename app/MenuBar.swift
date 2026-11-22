@@ -12,6 +12,15 @@ final class MenuBarPanel: NSPanel {
     }
 }
 
+/// A settings window. Escape has nothing to cancel here, so it is ignored instead of
+/// playing the alert sound. Cmd-W closes, as in other Mac windows.
+final class SettingsWindow: NSWindow {
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.keyCode == 53, attachedSheet == nil { return }
+        super.sendEvent(event)
+    }
+}
+
 /// Owns the shield in the menu bar, the panel it opens and the app's windows.
 /// AppKit replaces SwiftUI's MenuBarExtra, which always drops its panel straight below the icon.
 final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate {
@@ -91,7 +100,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
         if let open = windows[id], open.isVisible {
             window = open
         } else {
-            window = NSWindow(contentViewController: NSHostingController(rootView: view))
+            window = SettingsWindow(contentViewController: NSHostingController(rootView: view))
             window.title = title
             window.styleMask.remove(.resizable)
             window.isReleasedWhenClosed = false
