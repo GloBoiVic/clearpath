@@ -136,3 +136,21 @@ Issue #11 used `clearpath-browser-clean-11`, a disposable Tart clone of the pinn
 An earlier profile put both browsers' settings in one payload and nested Firefox's `DNSOverHTTPS` dictionary. macOS stored that payload but wrote only Chrome's managed preferences, so `about:policies` showed Enterprise Policies inactive. The profile now uses separate payloads and Firefox's flattened keys (`DNSOverHTTPS__Enabled`, `DNSOverHTTPS__Locked`). Firefox 160's macOS parser expands these keys. The VM did not test which of the two changes alone would have been enough.
 
 Not shown here: whether Chrome or Firefox would have used their own encrypted DNS in this VM without the profile, Google SafeSearch from the Chrome policy alone (the DNS mapping was active at the same time), signed-in search accounts, iCloud Private Relay (the VM had no Apple Account), and the remaining V1 acceptance matrix in #25.
+
+# VM driving helpers in a disposable VM — 2026-11-22
+
+Issue #38 ran the `scripts/vm` helpers in `clearpath-38-smoke`, a disposable Tart clone of the pinned image above (macOS 26.6.2, 25G83, arm64) started with the read-only share. The run did not touch DNS, profiles or `sudo`, and Victor's Mac was not changed. Victor approved the run in chat and then clicked **Allow** on the guest dialog described below. The clone was stopped and deleted.
+
+| Check | Observed |
+|---|---|
+| Clone, start, guest agent | `tart clone <digest>` and `tart run --no-audio --no-clipboard --dir=clearpath-proof:<lab>:ro` worked. `tart exec` answered on the first try and `sw_vers` reported 26.6.2 (25G83). The share held the five helpers and the documented `cp` copied them to `/tmp`. |
+| `vm-windowid`, `screencapture -l`, `base64` | Returned `40 150 57 723 625` for System Settings. The window capture came back as a 1446×1250 PNG (2× scale). |
+| `vm-ocr` | Found "About" at window point (301, 248), matching the screenshot. |
+| `vm-click` | After the dialog was dismissed, a click on the Bluetooth row (window origin plus the OCR point) opened the Bluetooth page. |
+| `vm-typepw` | `printf '%s' dnstest \| tart exec -i <vm> /tmp/vm-typepw` typed into System Settings' search box (a normal text field). So `tart exec -i` works. |
+| `vm-key` | `cmd+a` then `delete` cleared the search box. |
+| Stop and delete | `tart stop` and `tart delete` removed the clone. `tart list` showed only the cached images. |
+
+**Surprise.** The first `screencapture` through the guest agent raised *"tart-guest-agent" is requesting to bypass the system private window picker and directly access your screen and audio*. While it was up, `vm-click`, `vm-key` and `vm-typepw` exited 0 but changed nothing, `lsappinfo` named `UserNotificationCenter` as the front app, and Escape did not dismiss it. After **Allow**, the same helpers worked. `docs/TESTING.md` now says this.
+
+Not run: `vm-click --double`, and `vm-typepw` into a password field (it needs an administrator prompt).
