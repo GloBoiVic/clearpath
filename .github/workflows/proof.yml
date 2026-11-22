@@ -22,6 +22,8 @@ jobs:
         run: |
           python3 -m venv .venv
           .venv/bin/python -m pip install -r requirements.txt
+      - name: Run the Swift filter tests
+        run: swift test --package-path native --scratch-path artifacts/native-build
       - name: Run the loopback test suite
         run: .venv/bin/python -m unittest discover -s tests -v
       - name: Validate the example policy
