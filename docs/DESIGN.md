@@ -64,6 +64,12 @@ flowchart LR
     Panel --> Uninstall
 ~~~
 
+### Partner settings
+
+Use native grouped sections for **Primary partner** and **Backup partner**, with a labeled email input and an invitation status. Show **A backup partner is strongly recommended.** in the backup section. The backup is optional. Use **Send invitation** for an empty slot and **Replace invitation** for an unaccepted invite. Accepted slots show their status and address. Use **Refresh** to check for acceptance.
+
+The email and acceptance page identify the invited role. The partner selects **Accept invitation** without an account. The result is **Invitation accepted** or **This invitation is no longer available.** The approved copy is maintained in `clearpath/partner-copy.json`.
+
 ## Main screen
 
 Menu-bar panel. SwiftUI screen in `app/Clearpath.swift`. Approved by Victor on 2026-11-21. Victor approved the visual direction of the light and dark mockup on 2026-11-21.
