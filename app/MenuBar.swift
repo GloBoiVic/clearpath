@@ -1,11 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// A borderless panel that closes on Escape and can take keyboard focus.
+/// A borderless panel that closes on Escape or Cmd-W and can take keyboard focus.
 final class MenuBarPanel: NSPanel {
     var onClose: (() -> Void)?
     override var canBecomeKey: Bool { true }
     override func cancelOperation(_ sender: Any?) { orderOut(nil) }
+    override func performClose(_ sender: Any?) { orderOut(nil) }
     override func orderOut(_ sender: Any?) {
         super.orderOut(sender)
         onClose?()
@@ -16,7 +17,9 @@ final class MenuBarPanel: NSPanel {
 /// playing the alert sound. Cmd-W closes, as in other Mac windows.
 final class SettingsWindow: NSWindow {
     override func sendEvent(_ event: NSEvent) {
-        if event.type == .keyDown, event.keyCode == 53, attachedSheet == nil { return }
+        // Escape still reaches a field that is composing text (an input method's marked text).
+        let composing = (firstResponder as? NSTextView)?.hasMarkedText() ?? false
+        if event.type == .keyDown, event.keyCode == 53, attachedSheet == nil, !composing { return }
         super.sendEvent(event)
     }
 
@@ -111,8 +114,9 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
         panel.orderOut(nil)
         // A closed window is rebuilt so its view loads fresh, as SwiftUI's Window scene did.
         let window: NSWindow
-        if let open = windows[id], open.isVisible {
+        if let open = windows[id], open.isVisible || open.isMiniaturized {
             window = open
+            open.deminiaturize(nil)
         } else {
             window = SettingsWindow.make(title, view)
             windows[id] = window
@@ -129,7 +133,8 @@ enum ClearpathMain {
         let controller = MenuBarController()
         app.delegate = controller
         app.mainMenu = shortcutMenu()
-        app.run()
+        // The app holds its delegate weakly, so keep the controller alive for the whole run.
+        withExtendedLifetime(controller) { app.run() }
     }
 
     /// Never shown, since Clearpath has no menu bar of its own, but it gives the windows the
