@@ -76,3 +76,22 @@ All reproduction assertions passed. These are bugs reproduced in two helper func
 ## Outstanding validation
 
 Safari, Chrome, Firefox, private sessions, locked SafeSearch controls, browser-managed policies, DoH/DoT/DoQ, Private Relay, VPN coexistence, actual alternate-DNS capture by a native extension, ECH/QUIC metadata, warm connections, real reboot/logout/sleep/wake, network changes, NAT64, scoped/private DNS and native rollback are **unverified**. Full developer tool workflows, production blocklist accuracy/freshness/licensing integration, failure-mode guarantees and long-running load/security testing also remain unverified. Detailed expected outcomes and safe VM rollback are in [TESTING.md](TESTING.md).
+
+# Filter service in a disposable VM — 2026-11-21
+
+`clearpath-service` install and rollback (#9), run in a disposable Tart VM: macOS 26.6.2 (25G83), arm64, image `ghcr.io/cirruslabs/macos-tahoe-base@sha256:65c3133a633fda8753cf1f71f2d55727792d534a2125b0032466563dcc8e58fd`, cloned to a clean snapshot before first boot. One network service, Ethernet, on automatic (DHCP) DNS. Synthetic policy (`adult.example`, `blocked.example`, `www.google.com` → `forcesafesearch.google.com`) and a loopback fixture upstream on `127.0.0.1:1053`. Victor's Mac was not changed.
+
+| Check | Observed |
+|---|---|
+| Install | Recovery record written first (Ethernet: automatic; full `scutil --dns`). Daemon answering on `127.0.0.1:53`, then Ethernet DNS set to `127.0.0.1`. Filter process runs as `nobody`. |
+| System blocking | `dscacheutil` and Python `getaddrinfo`: `blocked.example`, `sub.blocked.example`, `adult.example`, `www.adult.example` fail; none reached the fixture upstream. `allowed.example` → `192.0.2.42`; `www.google.com` → alias of `forcesafesearch.google.com`. The VM's own background lookups also went through the filter. |
+| Restart on exit | `kill -9` of the filter: a new process, still `nobody`, answered after 0.2–0.3 s in three timed kills. A filter that dies within 2 s of starting waits out launchd's 2 s `ThrottleInterval` first. |
+| Menu-bar app quit | App opened and quit; filter pid unchanged, still blocking. |
+| Logout | `launchctl bootout gui/501`: filter pid unchanged through the logout and the auto-login that followed. |
+| Reboot | Filter started at boot as `nobody`, blocked names failed, allowed names resolved once the fixture was restarted. |
+| Uninstall | Ethernet back to automatic, `scutil --dns` resolver #1 identical to the record, daemon unloaded, plist and folder gone, nothing on port 53. A second uninstall succeeded with nothing to do. |
+| Install that never answers | Filter replaced by `/usr/bin/true`: install waited 10 s, rolled back and exited 1, leaving DNS automatic and no files or daemon. |
+| Install killed partway | Left record, files and a loaded daemon with DNS unchanged. A new install refused; `uninstall` removed everything. |
+| Port 53 taken | Install refused (exit 2) and changed nothing. |
+
+Not shown here: an install interrupted after some services had moved to the filter (covered by `ServiceTests` with a simulated Mac), more than one network service, VPNs and network changes (#10), and browsers (#11, #25).

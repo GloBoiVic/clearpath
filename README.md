@@ -2,7 +2,7 @@
 
 Clearpath is a free, open-source macOS app that blocks adult and NSFW websites in every browser, with an accountability partner instead of spyware. What V1 is, and why, is in [docs/BRIEF.md](docs/BRIEF.md); how it is built is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Do not fork distraction-free's resolver or installer. DNS filtering works when requests reach it; arbitrary encrypted DNS, proxies, VPNs and a willing administrator remain bypasses. Cross-browser protection is **not yet validated**.
 
-This repository contains an isolated Python DNS proof of concept, automated tests, upstream bug reproductions, inert browser-policy examples, and an engineering assessment. Run `./build.sh` on macOS with the Swift toolchain to open the menu-bar design preview. Click the shield to see synthetic status data. The preview is independent of the DNS harness. Its Partner settings window can connect to a local pairing service. Nothing here installs a service, edits system DNS, changes Screen Time, installs certificates, or removes administrator access.
+This repository contains an isolated Python DNS proof of concept, automated tests, upstream bug reproductions, inert browser-policy examples, and an engineering assessment. Run `./build.sh` on macOS with the Swift toolchain to open the menu-bar design preview. Click the shield to see synthetic status data. The preview is independent of the DNS harness. Its Partner settings window can connect to a local pairing service. Only `clearpath-service install` (below) installs a service and edits system DNS, and so far it is run only in a disposable VM. Nothing here changes Screen Time, installs certificates, or removes administrator access.
 
 ## Try partner invitations locally
 
@@ -55,7 +55,7 @@ Expected: NXDOMAIN, Google forced-safe CNAME plus any safe IPv6 records, Bing st
 
 ## Swift filter
 
-`native/` holds the Swift filter engine that V1 ships: policy, DNS handling, upstream transport, and `clearpath-filter`, a loopback-only UDP/TCP DNS server with the same options as the Python prototype. It is not installed as a service and does not change the Mac's DNS.
+`native/` holds the Swift filter engine that V1 ships: policy, DNS handling, upstream transport, and `clearpath-filter`, a loopback-only UDP/TCP DNS server with the same options as the Python prototype. Run by hand, it does not change the Mac's DNS.
 
 ```sh
 swift test --package-path native --scratch-path artifacts/native-build
@@ -64,7 +64,20 @@ swift build --package-path native --scratch-path artifacts/native-build --produc
   --policy policy.example.json --upstream 1.1.1.1 --port 1053
 ```
 
-The listener accepts only `127.0.0.1` or `::1` and ports 1024 and up. `--upstream` must be an IP address; that resolver sees allowed names and safe-target lookups. An invalid policy stops startup. It does not reload the policy on SIGHUP yet; restart it after a change.
+The listener accepts only `127.0.0.1` or `::1`, and port 53 or ports 1024 and up. `--user NAME` makes a filter started as root give up root once the listener is bound. `--upstream` must be an IP address; that resolver sees allowed names and safe-target lookups. An invalid policy stops startup. It does not reload the policy on SIGHUP yet; restart it after a change.
+
+### Filter service (disposable VM only)
+
+`clearpath-service` installs the filter as a root LaunchDaemon (`io.clearpath.filter`) on `127.0.0.1:53` and points every network service's DNS at it. It changes system DNS and needs `sudo`, so run it only in a disposable VM until Victor authorizes his Mac (`docs/TESTING.md`).
+
+```sh
+bin="$(swift build --package-path native --scratch-path artifacts/native-build --show-bin-path)"
+sudo "$bin/clearpath-service" install --filter "$bin/clearpath-filter" --policy policy.json [--upstream IP] [--upstream-port N]
+"$bin/clearpath-service" status      # JSON: installed, daemon pid, answering, each service's DNS
+sudo "$bin/clearpath-service" uninstall
+```
+
+Install refuses unless it runs as root, port 53 is free, the policy is valid, and no earlier install is present. Before changing anything it writes a recovery record of each network service's DNS (automatic or the exact servers) to `/Library/Application Support/Clearpath/recovery.json`. It starts the daemon, waits until the filter answers, and only then moves DNS to it. The filter runs as `nobody` and launchd restarts it if it exits. Without `--upstream` it forwards to the Mac's primary DNS server at install time. If any step fails, install rolls itself back. `uninstall` restores DNS from the record and checks it before stopping the daemon, then removes only Clearpath's files. It also cleans up an install that was interrupted, and is safe to run twice.
 
 ## Maintain a custom list
 
