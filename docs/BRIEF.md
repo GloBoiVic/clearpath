@@ -94,7 +94,7 @@ It reads the policy JSON and domain list text files and writes the policy JSON o
 
 ## Not done today
 
-- The menu-bar panel uses synthetic protection status. Setup checks the real DNS service on demand and guides manual browser profile installation. Partner settings works with the loopback pairing service and synthetic email sink. The production app, remote partner service and an installer for the app are pending. System DNS and profile changes are for disposable VM testing.
+- The shield checks the live filter and system DNS. When the filter stays down, an administrator can restore the saved DNS settings. The service records a local restore event for partner delivery in #20. Setup checks DNS on demand and guides manual browser profile installation. Partner settings works with the loopback pairing service and synthetic email sink. The production app, remote partner service and an installer for the app are pending. System DNS and profile changes are for disposable VM testing.
 - The Swift filtering engine (policy, DNS handling, upstream transport) from the `native-dns-foundation` branch is in `native/`. It runs as `clearpath-filter`, a loopback DNS server, and as the `clearpath-service` LaunchDaemon. Automatic routing uses current network resolver state for forwarded lookups. The VPN and developer-network acceptance results are tracked in [RESULTS.md](RESULTS.md). The DNS proxy extension code stays on the foundation branch as the upgrade path.
 - Browser setup observations are recorded in [RESULTS.md](RESULTS.md). The full V1 acceptance matrix remains tracked in [#25](https://github.com/GloBoiVic/clearpath/issues/25).
 - The example blocklist has three real domains plus test fixtures.

@@ -31,6 +31,7 @@ final class FakeMac: SystemControl {
     var filterStarts = true
     var portFree = true
     var ignoreSetFor: String?
+    var onPause: () -> Void = {}
     var calls: [String] = []
     var identifiers: [String: String] = [:]
     var locationID: String?
@@ -77,7 +78,7 @@ final class FakeMac: SystemControl {
     func portIsFree(_ port: UInt16) -> Bool { portFree }
     func networkLocation() throws -> NetworkLocation { NetworkLocation(id: locationID, serviceIDs: identifiers) }
     func filterAnswers(port: UInt16) -> Bool { loaded && filterStarts }
-    func pause(seconds: Double) {}
+    func pause(seconds: Double) { onPause() }
 
     var dns: [String: [String]] { Dictionary(uniqueKeysWithValues: services.map { ($0.name, $0.servers) }) }
     func index(of call: String) -> Int? { calls.firstIndex { $0.hasPrefix(call) } }
@@ -345,6 +346,108 @@ final class ServiceTests: XCTestCase {
         let status = try manager.status()
         XCTAssertTrue(status.installed && status.daemonLoaded && status.answering && status.dnsPointsToFilter)
         XCTAssertEqual(status.pid, 4242)
+        XCTAssertEqual(status.defaultResolverUsesFilter, false)
+        mac.resolverState = "DNS configuration\n\nresolver #1\n  nameserver[0] : 127.0.0.1\n\nresolver #2\n  nameserver[0] : 192.0.2.53\n"
+        XCTAssertEqual(try manager.status().defaultResolverUsesFilter, true)
+    }
+
+    func test_install_copies_the_control_tool_and_reports_when_it_is_available() throws {
+        let tool = root.appendingPathComponent("clearpath-service")
+        let contents = Data("synthetic service executable".utf8)
+        try contents.write(to: tool)
+        try manager.install(filter: filter, policy: policy, upstream: "192.0.2.10", upstreamPort: 53, controlTool: tool)
+        XCTAssertEqual(try Data(contentsOf: paths.controlTool), contents)
+        XCTAssertEqual(try mode(paths.controlTool), 0o755)
+        XCTAssertEqual(try manager.status().restoreAvailable, true)
+    }
+
+    func test_restore_waits_for_restart_and_leaves_protection_on_if_the_filter_answers() throws {
+        try install()
+        mac.filterStarts = false
+        mac.onPause = { [unowned self] in mac.filterStarts = true }
+        mac.calls.removeAll()
+
+        assertRefused({ try manager.restoreInternet() }, containing: "filter is answering")
+        XCTAssertEqual(Set(mac.dns.values), [["127.0.0.1"]])
+        XCTAssertNil(mac.index(of: "/usr/sbin/networksetup -setdnsservers"))
+        XCTAssertNil(try manager.status().restoreEvent)
+    }
+
+    func test_restore_recovers_original_dns_and_records_one_event_without_uninstalling() throws {
+        try install()
+        mac.filterStarts = false
+        let recovery = try Data(contentsOf: paths.recovery)
+        mac.calls.removeAll()
+
+        try manager.restoreInternet()
+
+        XCTAssertEqual(mac.dns, original)
+        XCTAssertTrue(mac.loaded)
+        XCTAssertEqual(try Data(contentsOf: paths.recovery), recovery)
+        let status = try manager.status()
+        XCTAssertEqual(status.recovery, .restored)
+        let event = try XCTUnwrap(status.restoreEvent)
+        XCTAssertNil(mac.index(of: "/bin/launchctl bootout"))
+
+        mac.calls.removeAll()
+        try manager.restoreInternet()
+        XCTAssertEqual(try manager.status().restoreEvent, event)
+        XCTAssertNil(mac.index(of: "/usr/sbin/networksetup -setdnsservers"))
+
+        mac.services[1].servers = ["198.51.100.53"]
+        XCTAssertEqual(try manager.status().recovery, .unknown)
+        XCTAssertEqual(try manager.status().restoreEvent, event)
+        assertRefused({ try manager.restoreInternet() }, containing: "DNS has changed")
+        try manager.uninstall()
+        assertNothingInstalled()
+    }
+
+    func test_restore_resumes_partial_dns_changes_without_publishing_a_success_early() throws {
+        try install()
+        mac.filterStarts = false
+        mac.ignoreSetFor = "Ethernet"
+
+        XCTAssertThrowsError(try manager.restoreInternet())
+        XCTAssertEqual(mac.dns["Wi-Fi"], [])
+        XCTAssertEqual(mac.dns["Ethernet"], ["127.0.0.1"])
+        XCTAssertEqual(try manager.status().recovery, .restoring)
+        XCTAssertNil(try manager.status().restoreEvent)
+
+        mac.ignoreSetFor = nil
+        mac.filterStarts = true
+        let restartedTool = ServiceManager(paths: paths, system: mac, log: { _ in })
+        try restartedTool.restoreInternet()
+        XCTAssertEqual(mac.dns, original)
+        XCTAssertEqual(try restartedTool.status().recovery, .restored)
+        XCTAssertNotNil(try restartedTool.status().restoreEvent)
+    }
+
+    func test_restore_refuses_unprivileged_calls_and_a_different_network_location() throws {
+        mac.locationID = "original"
+        mac.identifiers = ["Ethernet": "ethernet", "Wi-Fi": "wifi", "Thunderbolt Bridge": "bridge"]
+        try install()
+        mac.filterStarts = false
+        mac.calls.removeAll()
+        mac.isRoot = false
+        assertRefused({ try manager.restoreInternet() }, containing: "root")
+        mac.isRoot = true
+        mac.locationID = "other"
+        assertRefused({ try manager.restoreInternet() }, containing: "Switch back")
+        XCTAssertNil(mac.index(of: "/usr/sbin/networksetup -setdnsservers"))
+        XCTAssertNil(try manager.status().restoreEvent)
+    }
+
+    func test_uninstall_cannot_interleave_with_an_ongoing_restore() throws {
+        try install()
+        mac.filterStarts = false
+        mac.onPause = { [unowned self] in
+            assertRefused({ try manager.uninstall() }, containing: "already in progress")
+            mac.onPause = {}
+        }
+        try manager.restoreInternet()
+        XCTAssertEqual(mac.dns, original)
+        XCTAssertTrue(mac.loaded)
+        XCTAssertNotNil(try manager.status().restoreEvent)
     }
 
     func test_install_refuses_to_write_through_a_symlinked_folder() throws {

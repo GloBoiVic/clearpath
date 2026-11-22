@@ -1,43 +1,6 @@
 import AppKit
 import SwiftUI
 
-private struct FilterStatus: Decodable {
-    let installed: Bool
-    let daemonLoaded: Bool
-    let answering: Bool
-    let dnsPointsToFilter: Bool
-
-    var message: String {
-        if installed && daemonLoaded && answering && dnsPointsToFilter {
-            return "The filter is answering and the Mac’s DNS settings point to Clearpath."
-        }
-        if !installed && !daemonLoaded && !answering && !dnsPointsToFilter {
-            return "The Clearpath filter service is not installed."
-        }
-        return "The Clearpath DNS path could not be verified. Check the service and DNS settings in Terminal."
-    }
-
-    static func read() -> FilterStatus? {
-        guard let executable = Bundle.main.url(forAuxiliaryExecutable: "clearpath-service") else { return nil }
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = executable
-        process.arguments = ["status"]
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            let data = output.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return nil }
-            return try JSONDecoder().decode(Self.self, from: data)
-        } catch {
-            return nil
-        }
-    }
-}
-
 struct ProtectionSetup: View {
     private let profile = Bundle.main.url(forResource: "Clearpath Browser Policies", withExtension: "mobileconfig")
     @State private var status = "Check whether the filter is installed, answering, and configured for system DNS."

@@ -2,7 +2,7 @@
 
 Clearpath is a free, open-source macOS app that blocks adult and NSFW websites in every browser, with an accountability partner instead of spyware. See the [product brief](docs/BRIEF.md) and [architecture](docs/ARCHITECTURE.md). Do not fork distraction-free's resolver or installer. DNS filtering works when requests reach it. Arbitrary encrypted DNS, proxies, VPNs and administrator access can bypass it. Browser setup observations and the remaining V1 acceptance cases are in [docs/RESULTS.md](docs/RESULTS.md).
 
-This repository contains a Swift DNS filter and service, an isolated Python DNS harness, and the menu-bar app. Run `./build.sh` on macOS with the Swift toolchain. The shield panel displays synthetic status data, and **Set up protection** can check the real DNS service and reveal the Chrome and Firefox profile. The service installer and Device Management make system changes during the disposable VM procedure. **Partner settings** can connect to a local pairing service.
+This repository contains a Swift DNS filter and service, an isolated Python DNS harness, and the menu-bar app. Run `./build.sh` on macOS with the Swift toolchain. The shield shows live DNS protection status and offers **Restore internet** if the installed filter stays down. **Set up protection** can check DNS and reveal the Chrome and Firefox profile. The service installer and Device Management make system changes during the disposable VM procedure. **Partner settings** can connect to a local pairing service.
 
 ## Try partner invitations locally
 
@@ -73,13 +73,16 @@ The listener accepts only `127.0.0.1` or `::1`, and port 53 or ports 1024 and up
 ```sh
 bin="$(swift build --package-path native --scratch-path artifacts/native-build --show-bin-path)"
 sudo "$bin/clearpath-service" install --filter "$bin/clearpath-filter" --policy policy.json [--upstream IP] [--upstream-port N]
-"$bin/clearpath-service" status      # JSON: installed, daemon pid, answering, each service's DNS
+"$bin/clearpath-service" status      # JSON: daemon, DNS and recovery state
+sudo "$bin/clearpath-service" restore    # emergency recovery if the filter stays down
 sudo "$bin/clearpath-service" uninstall
 ```
 
 Install refuses unless it runs as root, port 53 is free, the policy is valid, and no earlier install is present. Before changing anything it writes each network service's DNS setting (automatic or the exact servers) to `/Library/Application Support/Clearpath/recovery.json`. It starts the daemon, waits until the filter answers, and then moves DNS to it. The filter runs as `nobody` and launchd restarts it if it exits. In automatic mode, the filter uses the current network's negotiated DNS or the active service's saved manual servers. For names with a supplemental DNS match, it uses that resolver. `--upstream` selects a fixed resolver for controlled testing.
 
 If installation fails, it rolls itself back. `uninstall` restores DNS from the record and checks it before stopping the daemon, then removes only Clearpath's files. It also cleans up an interrupted install and is safe to run twice. If you changed macOS network locations after installing, switch back to the installation location before running `uninstall`.
+
+**Restore internet** asks macOS for administrator approval and uses the saved DNS settings after giving the filter time to restart. It verifies the settings before showing success, which means DNS filtering is off. Retry the same action if it was interrupted. The service and saved configuration stay installed. `status` exposes a local restore event for future partner delivery. An installation made with an older service tool lacks the helper for the button. Use an updated `clearpath-service restore` from the Terminal on that installation.
 
 ### Browser setup (disposable VM only)
 

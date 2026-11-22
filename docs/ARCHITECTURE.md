@@ -17,6 +17,8 @@ Components:
 
 Fail closed: if the filter service is down, lookups fail until launchd restarts it. If it stays down, the menu-bar app offers "Restore internet", which restores the previous DNS setting and alerts the partner.
 
+The panel polls the service tool for the daemon PID, a nameless loopback DNS response and the configured and effective default DNS paths. An inconclusive check shows an unknown state. For recovery, the installer places a root-controlled copy of `clearpath-service` with the filter. The app requests macOS administrator approval for that copy's fixed `restore` command. The command checks again for a restart and writes a durable recovery marker before changing DNS. It reuses the original DNS record and verifies the restored settings. A retry resumes the same recovery and preserves the event ID. `status` exposes the completed event ID and timestamp for #20 to deliver. Uninstall removes the local event along with the other service files.
+
 Costs accepted with the local DNS service, to be measured in the VM before Victor's Mac: VPN and split-DNS coexistence, network changes and sleep/wake, captive portals, and an administrator can change the DNS setting back (detected and alerted, not prevented). Bypasses listed in the assessment below (encrypted DNS to arbitrary endpoints, VPNs, proxies, Tor, Private Relay) still apply.
 
 # Technical foundation assessment — 2026-11-17

@@ -1,16 +1,18 @@
 import Foundation
 import ClearpathService
 
-// Installs, removes and reports the Clearpath filter LaunchDaemon. Install and uninstall change
+// Installs, removes and reports the Clearpath filter LaunchDaemon. Install, restore and uninstall change
 // the Mac's DNS settings and need root; run them only where that is approved (docs/TESTING.md).
 
 let usage = """
 usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--upstream-port N]
+       clearpath-service restore
        clearpath-service uninstall
        clearpath-service status
        clearpath-service browser-profile
   install records every network service's DNS, starts the filter on 127.0.0.1:53 and points DNS at it.
   Without --upstream it follows the Mac's current default and supplemental DNS resolvers.
+  restore returns DNS to its saved settings if the filter stays down, retaining the installation.
   uninstall restores the recorded DNS, then stops the filter and removes only Clearpath's files.
   browser-profile writes Clearpath's removable Chrome and Firefox profile to standard output.
 
@@ -44,17 +46,25 @@ case "install":
     guard let filter = options["--filter"], let policy = options["--policy"],
           let port = UInt16(options["--upstream-port"]!) else { fail(usage, code: 2) }
     run {
+        guard let executable = Bundle.main.executableURL else {
+            throw ServiceError.refused("Could not locate the current service executable.")
+        }
         try manager.install(filter: URL(fileURLWithPath: filter), policy: URL(fileURLWithPath: policy),
-                            upstream: options["--upstream"], upstreamPort: port)
+                            upstream: options["--upstream"], upstreamPort: port, controlTool: executable)
     }
+case "restore":
+    guard arguments.isEmpty else { fail(usage, code: 2) }
+    run { try manager.restoreInternet() }
 case "uninstall":
     guard arguments.isEmpty else { fail(usage, code: 2) }
     run { try manager.uninstall() }
 case "status":
     guard arguments.isEmpty else { fail(usage, code: 2) }
     run {
+        alarm(5) // Bound an unresponsive system command so the app cannot keep stale health.
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
         print(String(decoding: try encoder.encode(manager.status()), as: UTF8.self))
     }
 case "browser-profile":

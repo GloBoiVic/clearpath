@@ -51,6 +51,8 @@ The panel opens just below the menu bar with its left edge at the shield, so it 
 
 Place **Set up protection** after **Partner settings**. Use words and symbols together for status. An unknown filter state gets an explicit status message. If restarting fails, give **Restore internet** priority and explain that using it alerts the partner. Keep browsing history, blocked-attempt counts and pause controls out of every view.
 
+While the filter has time to restart, show **Restarting protection…**. The recovery action requests administrator approval. Show **Restoring internet…** while it runs, **DNS restoration interrupted** if it must be retried, and **Previous DNS settings restored** with **DNS filtering is off** after confirmation. Until partner delivery is connected, describe the local event recorded for partner alerts.
+
 ## Screens
 
 | Job | Surface |

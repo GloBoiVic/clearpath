@@ -87,6 +87,16 @@ Do not use an adult image appearing/not appearing as the sole test: SafeSearch i
 
 Rollback if the tool itself fails: `sudo networksetup -setdnsservers <service> <recorded servers>` (or `Empty` for automatic) for each service in `/Library/Application Support/Clearpath/recovery.json`, then `sudo launchctl bootout system/io.clearpath.filter`, then remove `/Library/LaunchDaemons/io.clearpath.filter.plist` and that folder. Or restore the VM snapshot.
 
+### Protection health and Restore internet in the VM
+
+Use the install procedure above with a loopback upstream and a synthetic original resolver. Keep any original fixture that binds port 53 stopped while the filter occupies that port. Before changing DNS, confirm the original fixture can resolve a fresh allowed name. Watch the menu bar while running the following checks:
+
+1. Verify **Protection is on** only once `clearpath-service status` shows the daemon answering and the effective default resolver using the filter. Check a blocked and an allowed name through the system resolver.
+2. Stop the filter briefly and query a fresh synthetic name against the configured loopback resolver. It should fail until launchd restarts the filter. Verify a new PID and a fresh allowed lookup after restart.
+3. Make the filter unable to start in the disposable guest using an invalid synthetic policy. Check **Restarting protection…**, then **Protection is offline**. Bring up the original resolver fixture and use **Restore internet** with guest administrator approval.
+4. In a separate run, stop the restore command after it writes `internet-recovery.json` and before it confirms success. Check that `status` shows `restoring` with no restore event. Retry from the panel or run `sudo clearpath-service restore`.
+5. Compare current DNS with the saved settings, look up a fresh allowed name with `dscacheutil`, and confirm the panel shows **Previous DNS settings restored**. Confirm that repeating the command retains one event ID and that the daemon is still installed. Uninstall, verify rollback, and discard the clone.
+
 ## Automatic routing in the VM
 
 Use an isolated guest network with a synthetic DHCP peer and DNS servers bound inside the guest. Supply a search domain and two different default resolver addresses, then install without `--upstream`. Victor approved guest networking and privileged tests for #10 in a disposable VM only.
