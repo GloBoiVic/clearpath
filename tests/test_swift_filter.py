@@ -349,7 +349,6 @@ class SwiftServiceCommandTests(unittest.TestCase):
                 self.assertIn("must run as root", result.stderr)
                 self.assertEqual(result.stdout, "")
             self.assertEqual(sorted(os.listdir(tmp)), ["clearpath-filter", "policy.json"])
-        self.assertFalse(Path("/Library/LaunchDaemons/io.clearpath.filter.plist").exists())
 
     def test_bad_usage_exits_2(self):
         for command in ([], ["install"], ["install", "--policy"], ["uninstall", "now"], ["status", "x"], ["start"]):

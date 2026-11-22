@@ -275,6 +275,14 @@ final class ServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: paths.daemonPlist.path))
     }
 
+    func test_uninstall_without_record_or_plist_keeps_a_loaded_daemon_that_dns_still_uses() throws {
+        try install()
+        try FileManager.default.removeItem(at: paths.recovery)
+        try FileManager.default.removeItem(at: paths.daemonPlist)
+        assertRefused({ try manager.uninstall() }, containing: "recovery record is missing")
+        XCTAssertTrue(mac.loaded, "the only DNS listener keeps running")
+    }
+
     func test_unreadable_record_changes_nothing() throws {
         try install()
         try Data("{".utf8).write(to: paths.recovery)

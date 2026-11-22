@@ -139,7 +139,7 @@ public final class ServiceManager {
         if let record = try readRecord() {
             try restoreDNS(record.services)
         } else if let stuck = try readServices().first(where: { $0.servers.contains(Self.listenAddress) }),
-                  FileManager.default.fileExists(atPath: paths.daemonPlist.path) {
+                  FileManager.default.fileExists(atPath: paths.daemonPlist.path) || daemonLoaded() {
             // Without the record the original setting is unknown, and stopping the daemon would cut DNS.
             throw ServiceError.refused("The recovery record is missing and \(stuck.name) still uses \(Self.listenAddress). Set its DNS back by hand first (networksetup -setdnsservers \"\(stuck.name)\" Empty for automatic).")
         }
