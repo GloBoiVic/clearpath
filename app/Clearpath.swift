@@ -18,7 +18,8 @@ enum Sample: String {
 
 struct Panel: View {
     let sample: Sample
-    @Environment(\.openWindow) private var openWindow
+    let openPartnerSettings: () -> Void
+    let openSetup: () -> Void
     @State private var notice: String?
 
     var body: some View {
@@ -50,14 +51,8 @@ struct Panel: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             destination("Blocked sites", icon: "globe")
-            destination("Partner settings", icon: "person.crop.circle") {
-                openWindow(id: "partner-settings")
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            destination("Set up protection", icon: "gearshape") {
-                openWindow(id: "protection-setup")
-                NSApp.activate(ignoringOtherApps: true)
-            }
+            destination("Partner settings", icon: "person.crop.circle", action: openPartnerSettings)
+            destination("Set up protection", icon: "gearshape", action: openSetup)
         }
         .padding(16)
         .frame(width: 320)
@@ -91,46 +86,36 @@ struct Panel: View {
     }
 }
 
-struct PathShield: View {
-    let sample: Sample
-
-    var body: some View {
-        ZStack {
-            Image(systemName: sample == .unknown ? "shield" : "shield.fill")
-            if sample == .connected {
-                Path { path in
-                    path.move(to: CGPoint(x: 10, y: 3))
-                    path.addQuadCurve(to: CGPoint(x: 10, y: 9), control: CGPoint(x: 2, y: 6))
-                    path.addQuadCurve(to: CGPoint(x: 7, y: 15), control: CGPoint(x: 16, y: 11))
-                }.stroke(lineWidth: 1.4).blendMode(.destinationOut)
-            } else {
-                Text(sample == .failed ? "!" : "?").font(.system(size: 9, weight: .bold))
-                    .blendMode(sample == .failed ? .destinationOut : .normal)
-            }
-        }.frame(width: 18, height: 18).compositingGroup()
-    }
-}
-
-@main
-struct ClearpathApp: App {
-    let sample = Sample(rawValue: ProcessInfo.processInfo.environment["CLEARPATH_SAMPLE"] ?? "connected") ?? .unknown
-
-    var body: some Scene {
-        MenuBarExtra {
-            Panel(sample: sample)
-        } label: {
-            PathShield(sample: sample)
-                .accessibilityLabel("Clearpath design preview. \(sample.headline). Partner: \(sample.partner)")
-        }.menuBarExtraStyle(.window)
-        Window("Partner settings", id: "partner-settings") {
-            PartnerSettings()
+/// The menu-bar mark: a path through a shield, drawn as a template image so the menu bar tints it.
+func shieldImage(for sample: Sample) -> NSImage {
+    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
+        guard let context = NSGraphicsContext.current else { return false }
+        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        if let symbol = NSImage(systemSymbolName: sample == .unknown ? "shield" : "shield.fill",
+                                accessibilityDescription: nil)?.withSymbolConfiguration(config) {
+            let size = symbol.size
+            symbol.draw(in: NSRect(x: (18 - size.width) / 2, y: (18 - size.height) / 2,
+                                   width: size.width, height: size.height),
+                        from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         }
-        .windowResizability(.contentSize)
-        .defaultPosition(.center)
-        Window("Set up protection", id: "protection-setup") {
-            ProtectionSetup()
+        if sample == .connected {
+            context.compositingOperation = .destinationOut
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: 10, y: 3))
+            path.curve(to: NSPoint(x: 10, y: 9), controlPoint: NSPoint(x: 2, y: 6))
+            path.curve(to: NSPoint(x: 7, y: 15), controlPoint: NSPoint(x: 16, y: 11))
+            path.lineWidth = 1.4
+            path.stroke()
+        } else {
+            if sample == .failed { context.compositingOperation = .destinationOut }
+            let mark = NSAttributedString(string: sample == .failed ? "!" : "?", attributes: [
+                .font: NSFont.systemFont(ofSize: 9, weight: .bold), .foregroundColor: NSColor.black,
+            ])
+            let size = mark.size()
+            mark.draw(at: NSPoint(x: (18 - size.width) / 2, y: (18 - size.height) / 2))
         }
-        .windowResizability(.contentSize)
-        .defaultPosition(.center)
+        return true
     }
+    image.isTemplate = true
+    return image
 }
