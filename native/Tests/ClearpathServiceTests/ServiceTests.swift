@@ -32,6 +32,8 @@ final class FakeMac: SystemControl {
     var portFree = true
     var ignoreSetFor: String?
     var calls: [String] = []
+    var identifiers: [String: String] = [:]
+    var locationID: String?
     /// Checked at the moment of bootstrap: the record must already be on disk.
     var onBootstrap: () -> Void = {}
 
@@ -73,6 +75,7 @@ final class FakeMac: SystemControl {
     }
 
     func portIsFree(_ port: UInt16) -> Bool { portFree }
+    func networkLocation() throws -> NetworkLocation { NetworkLocation(id: locationID, serviceIDs: identifiers) }
     func filterAnswers(port: UInt16) -> Bool { loaded && filterStarts }
     func pause(seconds: Double) {}
 
@@ -169,7 +172,12 @@ final class ServiceTests: XCTestCase {
     func test_upstream_defaults_to_first_non_loopback_primary_nameserver() throws {
         try install(upstream: nil)
         XCTAssertEqual(try record().upstream, "198.51.100.1")
-        XCTAssertEqual(ServiceManager.primaryNameserver(in: "resolver #1\n  nameserver[0] : fe80::1%en0\n"), nil)
+        let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: paths.daemonPlist), format: nil) as? [String: Any])
+        let args = try XCTUnwrap(plist["ProgramArguments"] as? [String])
+        XCTAssertTrue(args.contains("--network-dns"))
+        XCTAssertTrue(args.contains(paths.recovery.path))
+        XCTAssertFalse(args.contains("--upstream"), "the installed filter must select its upstream from the current network")
+        XCTAssertEqual(ServiceManager.primaryNameserver(in: "resolver #1\n  nameserver[0] : fe80::1\n"), nil)
         XCTAssertEqual(ServiceManager.primaryNameserver(in: "No DNS configuration available\n"), nil)
         mac.resolverState = "DNS configuration\n\nresolver #1\n  nameserver[0] : 127.0.0.1\n"
         try manager.uninstall()
@@ -215,6 +223,34 @@ final class ServiceTests: XCTestCase {
         assertNothingInstalled()
     }
 
+    func test_uninstall_restores_a_renamed_service_by_its_identifier() throws {
+        mac.identifiers["Ethernet"] = "ethernet"
+        try install()
+        XCTAssertEqual(try record().services.first { $0.name == "Ethernet" }?.id, "ethernet")
+        mac.services[1].name = "Lab Ethernet"
+        mac.identifiers = ["Lab Ethernet": "ethernet"]
+
+        try manager.uninstall()
+        XCTAssertEqual(mac.dns["Lab Ethernet"], original["Ethernet"])
+        XCTAssertFalse(mac.loaded)
+    }
+
+    func test_uninstall_keeps_the_original_record_when_a_different_network_location_is_active() throws {
+        mac.locationID = "original"
+        mac.identifiers = ["Ethernet": "ethernet", "Wi-Fi": "wifi", "Thunderbolt Bridge": "bridge"]
+        try install()
+        mac.locationID = "other"
+        mac.calls.removeAll()
+        assertRefused({ try manager.uninstall() }, containing: "Switch back")
+        XCTAssertTrue(mac.loaded)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.recovery.path))
+        XCTAssertNil(mac.index(of: "/usr/sbin/networksetup -setdnsservers"))
+
+        mac.locationID = "original"
+        try manager.uninstall()
+        assertNothingInstalled()
+    }
+
     func test_install_refuses_unsafe_starts_and_changes_nothing() throws {
         mac.isRoot = false
         assertRefused({ try install() }, containing: "root")
@@ -223,6 +259,7 @@ final class ServiceTests: XCTestCase {
         assertRefused({ try install() }, containing: "already listens")
         mac.portFree = true
         assertRefused({ try install(upstream: "127.0.0.1", port: 53) }, containing: "point back")
+        assertRefused({ try install(upstream: "::ffff:127.0.0.1", port: 53) }, containing: "point back")
         assertRefused({ try install(upstream: "resolver.example") }, containing: "IP address")
         assertRefused({ try manager.install(filter: filter, policy: root.appendingPathComponent("absent.json"), upstream: "192.0.2.10", upstreamPort: 53) }, containing: "not a readable file")
         try Data(#"{"adult": ["*.bad"], "custom": [], "allow": [], "safesearch": {}}"#.utf8).write(to: policy)

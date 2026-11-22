@@ -77,7 +77,9 @@ sudo "$bin/clearpath-service" install --filter "$bin/clearpath-filter" --policy 
 sudo "$bin/clearpath-service" uninstall
 ```
 
-Install refuses unless it runs as root, port 53 is free, the policy is valid, and no earlier install is present. Before changing anything it writes a recovery record of each network service's DNS (automatic or the exact servers) to `/Library/Application Support/Clearpath/recovery.json`. It starts the daemon, waits until the filter answers, and only then moves DNS to it. The filter runs as `nobody` and launchd restarts it if it exits. Without `--upstream` it forwards to the Mac's primary DNS server at install time. If any step fails, install rolls itself back. `uninstall` restores DNS from the record and checks it before stopping the daemon, then removes only Clearpath's files. It also cleans up an install that was interrupted, and is safe to run twice.
+Install refuses unless it runs as root, port 53 is free, the policy is valid, and no earlier install is present. Before changing anything it writes each network service's DNS setting (automatic or the exact servers) to `/Library/Application Support/Clearpath/recovery.json`. It starts the daemon, waits until the filter answers, and then moves DNS to it. The filter runs as `nobody` and launchd restarts it if it exits. In automatic mode, the filter uses the current network's negotiated DNS or the active service's saved manual servers. For names with a supplemental DNS match, it uses that resolver. `--upstream` selects a fixed resolver for controlled testing.
+
+If installation fails, it rolls itself back. `uninstall` restores DNS from the record and checks it before stopping the daemon, then removes only Clearpath's files. It also cleans up an interrupted install and is safe to run twice. If you changed macOS network locations after installing, switch back to the installation location before running `uninstall`.
 
 ## Maintain a custom list
 

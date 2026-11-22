@@ -9,7 +9,7 @@ usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--
        clearpath-service uninstall
        clearpath-service status
   install records every network service's DNS, starts the filter on 127.0.0.1:53 and points DNS at it.
-  Without --upstream it forwards to the Mac's current primary DNS server.
+  Without --upstream it follows the Mac's current default and supplemental DNS resolvers.
   uninstall restores the recorded DNS, then stops the filter and removes only Clearpath's files.
 
 """

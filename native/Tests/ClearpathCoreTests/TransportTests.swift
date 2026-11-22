@@ -2,6 +2,7 @@ import XCTest
 import Network
 import ClearpathCore
 import ClearpathNetwork
+@testable import ClearpathService
 
 /// Real Network.framework sockets, bound exclusively to IPv4/IPv6 loopback.
 /// This bypasses the unactivated NE flow adapter and never changes system DNS.
@@ -11,8 +12,10 @@ private final class LocalDNSServer: @unchecked Sendable {
     let queue = DispatchQueue(label: "io.clearpath.tests.listener")
     var connections: [NWConnection] = []
     let silent: Bool
-    init(tcp: Bool, ipv6: Bool = false, silent: Bool = false) throws {
+    let answerAddress: [UInt8]
+    init(tcp: Bool, ipv6: Bool = false, silent: Bool = false, answerAddress: [UInt8] = [192, 0, 2, 42]) throws {
         self.tcp = tcp; self.silent = silent
+        self.answerAddress = answerAddress
         let parameters: NWParameters = tcp ? .tcp : .udp
         parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(ipv6 ? "::1" : "127.0.0.1"), port: .any)
         listener = try NWListener(using: parameters)
@@ -40,7 +43,7 @@ private final class LocalDNSServer: @unchecked Sendable {
         }
     }
     func answer(_ query: DNSMessage) -> [UInt8] {
-        query.response(answers: [DNSRecord(name: query.name, type: 1, data: [192,0,2,42])])
+        query.response(answers: [DNSRecord(name: query.name, type: 1, data: answerAddress)])
     }
     func receiveTCP(_ connection: NWConnection, stream: DNSStream) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65537) { data, _, _, _ in
@@ -95,5 +98,35 @@ final class TransportTests: XCTestCase {
             _ = try await NetworkUpstream(endpoint: .hostPort(host: "resolver.example", port: 53)).exchange(DNSMessage.query("example.com", type: 1), tcp: false)
             XCTFail()
         } catch { XCTAssertTrue(error is DNSError) }
+    }
+
+    func testNetworkDNSRoutesPublicAndPrivateQueriesToDifferentLoopbackFixtures() async throws {
+        for tcp in [false, true] {
+            let standard = try LocalDNSServer(tcp: tcp)
+            defer { standard.stop() }
+            let privateDNS = try LocalDNSServer(tcp: tcp, ipv6: true, answerAddress: [192, 0, 2, 43])
+            defer { privateDNS.stop() }
+            let record = RecoveryRecord(createdAt: "", services: [], upstream: "192.0.2.1",
+                                        upstreamPort: standard.port.rawValue, resolverState: "")
+            let upstream = NetworkDNS(record: record, listenPort: 53, timeout: 0.5) {
+                ["State:/Network/Global/DNS": ["ServerAddresses": ["127.0.0.1", "::ffff:127.0.0.1"]],
+                 "State:/Network/Global/IPv4": ["PrimaryService": "ethernet"],
+                 "State:/Network/Service/ethernet/DNS": ["ServerAddresses": ["127.0.0.1"]],
+                 "State:/Network/Service/tunnel/DNS": ["SupplementalMatchDomains": ["vpn.example"],
+                                                      "ServerAddresses": ["::1"], "ServerPort": Int(privateDNS.port.rawValue)],
+                 "State:/Network/Service/broken/DNS": ["SupplementalMatchDomains": ["broken.example"],
+                                                      "ServerAddresses": ["::ffff:127.0.0.1"], "ServerPort": 53]]
+            }
+            let standardQuery = DNSMessage.query("public.example", type: 1)
+            let publicResponse = try DNSMessage(await upstream.exchange(standardQuery, tcp: tcp))
+            XCTAssertEqual(publicResponse.answers.first?.data, [192, 0, 2, 42])
+            let privateQuery = DNSMessage.query("app.vpn.example", type: 1)
+            let privateResponse = try DNSMessage(await upstream.exchange(privateQuery, tcp: tcp))
+            XCTAssertEqual(privateResponse.answers.first?.data, [192, 0, 2, 43])
+            do {
+                _ = try await upstream.exchange(DNSMessage.query("app.broken.example", type: 1), tcp: tcp)
+                XCTFail("a scope pointing back to the listener must not use the default")
+            } catch DNSError.closed {}
+        }
     }
 }

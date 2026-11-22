@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import ClearpathCore
 
 /// Where Clearpath's own files live. `root` is `/` on a Mac and a temp folder in tests.
@@ -19,12 +20,16 @@ public struct ServicePaths: Sendable {
 public struct ServiceDNS: Codable, Equatable, Sendable {
     public let name: String
     public let servers: [String]
-    public init(name: String, servers: [String]) { self.name = name; self.servers = servers }
+    public let id: String?
+    public init(name: String, servers: [String], id: String? = nil) {
+        self.name = name; self.servers = servers; self.id = id
+    }
 }
 
 /// Written, and flushed to disk, before Clearpath changes anything. Uninstall restores from it.
 public struct RecoveryRecord: Codable, Equatable, Sendable {
     public var format = 1
+    public var locationID: String? = nil
     public let createdAt: String
     public let services: [ServiceDNS]
     public let upstream: String
@@ -87,8 +92,12 @@ public final class ServiceManager {
             throw ServiceError.refused("Something already listens on \(Self.listenAddress):\(Self.listenPort).")
         }
 
-        let services = try readServices()
+        let location = try system.networkLocation()
+        let services = try readServices(ids: location.serviceIDs)
         guard !services.isEmpty else { throw ServiceError.refused("No network services found.") }
+        if location.id != nil && services.contains(where: { $0.id == nil }) {
+            throw ServiceError.refused("Could not identify each network service in the current location.")
+        }
         if let taken = services.first(where: { $0.servers.contains(Self.listenAddress) }) {
             throw ServiceError.refused("\(taken.name) already uses \(Self.listenAddress) for DNS; restore it before installing.")
         }
@@ -97,12 +106,14 @@ public final class ServiceManager {
         guard let chosen = upstream ?? Self.primaryNameserver(in: resolver.output) else {
             throw ServiceError.refused("No usable upstream DNS server found; pass --upstream.")
         }
-        guard let family = Self.ipFamily(chosen) else { throw ServiceError.refused("--upstream must be an IP address.") }
-        if Self.isLoopback(chosen, family: family) && upstreamPort == Self.listenPort {
+        guard let host = NetworkDNS.resolverHost(chosen) else {
+            throw ServiceError.refused("--upstream must be an IP address usable as a unicast resolver.")
+        }
+        if NetworkDNS.isLoopback(host) && upstreamPort == Self.listenPort {
             throw ServiceError.refused("The upstream must not point back at the filter.")
         }
 
-        let record = RecoveryRecord(createdAt: ISO8601DateFormatter().string(from: Date()), services: services,
+        let record = RecoveryRecord(locationID: location.id, createdAt: ISO8601DateFormatter().string(from: Date()), services: services,
                                     upstream: chosen, upstreamPort: upstreamPort, resolverState: resolver.output)
         try makeDirectory(paths.supportDirectory)
         try writeFile(try Self.encoder.encode(record), to: paths.recovery, mode: 0o644, exclusive: true)
@@ -113,7 +124,7 @@ public final class ServiceManager {
             try writeFile(filterData, to: paths.filter, mode: 0o755)
             try writeFile(policyData, to: paths.policy, mode: 0o644)
             try makeDirectory(paths.daemonPlist.deletingLastPathComponent())
-            try writeFile(try daemonPlist(upstream: chosen, upstreamPort: upstreamPort), to: paths.daemonPlist, mode: 0o644)
+            try writeFile(try daemonPlist(upstream: upstream, upstreamPort: upstreamPort), to: paths.daemonPlist, mode: 0o644)
             try check(system.run(.launchctl, ["bootstrap", "system", paths.daemonPlist.path]), "launchctl bootstrap")
             try waitUntilAnswering()
             log("Filter answering on \(Self.listenAddress):\(Self.listenPort).")
@@ -137,7 +148,14 @@ public final class ServiceManager {
     public func uninstall() throws {
         guard system.isRoot else { throw ServiceError.refused("Uninstall must run as root (sudo).") }
         if let record = try readRecord() {
-            try restoreDNS(record.services)
+            let location = try system.networkLocation()
+            if let original = record.locationID, location.id != original {
+                throw ServiceError.refused("Switch back to the macOS network location where Clearpath was installed, then run uninstall again.")
+            }
+            try restoreDNS(record.services, ids: location.serviceIDs)
+            if let stuck = try readServices().first(where: { $0.servers.contains(Self.listenAddress) }) {
+                throw ServiceError.failed("\(stuck.name) still uses the filter. Restore its DNS before stopping Clearpath.")
+            }
         } else if let stuck = try readServices().first(where: { $0.servers.contains(Self.listenAddress) }),
                   FileManager.default.fileExists(atPath: paths.daemonPlist.path) || daemonLoaded() {
             // Without the record the original setting is unknown, and stopping the daemon would cut DNS.
@@ -170,7 +188,7 @@ public final class ServiceManager {
 
     // MARK: DNS settings
 
-    func readServices() throws -> [ServiceDNS] {
+    func readServices(ids: [String: String] = [:]) throws -> [ServiceDNS] {
         let list = try system.run(.networksetup, ["-listallnetworkservices"])
         guard list.status == 0 else { throw ServiceError.failed("networksetup -listallnetworkservices failed: \(list.output)") }
         var lines = list.output.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
@@ -181,7 +199,7 @@ public final class ServiceManager {
         // A disabled service (marked *) is included: enabling it later must not skip the filter.
         return try lines.map { line in
             let name = line.hasPrefix("*") ? String(line.dropFirst()) : line
-            return ServiceDNS(name: name, servers: try readDNS(name))
+            return ServiceDNS(name: name, servers: try readDNS(name), id: ids[name])
         }
     }
 
@@ -206,12 +224,16 @@ public final class ServiceManager {
         }
     }
 
-    func restoreDNS(_ recorded: [ServiceDNS]) throws {
-        let present = Set(try readServices().map(\.name))
+    func restoreDNS(_ recorded: [ServiceDNS], ids: [String: String]) throws {
+        let present = try readServices(ids: ids)
         for service in recorded {
-            guard present.contains(service.name) else { log("\(service.name) no longer exists; nothing to restore."); continue }
-            try setDNS(service.name, to: service.servers)
-            log("Restored DNS for \(service.name): \(service.servers.isEmpty ? "automatic" : service.servers.joined(separator: " ")).")
+            let current = present.first { entry in
+                if let id = service.id { return entry.id == id }
+                return entry.name == service.name
+            }
+            guard let current else { log("\(service.name) no longer exists; nothing to restore."); continue }
+            try setDNS(current.name, to: service.servers)
+            log("Restored DNS for \(current.name): \(service.servers.isEmpty ? "automatic" : service.servers.joined(separator: " ")).")
         }
     }
 
@@ -224,32 +246,27 @@ public final class ServiceManager {
             if line.hasPrefix("resolver #") { if inFirst { break }; inFirst = line == "resolver #1"; continue }
             guard inFirst, line.hasPrefix("nameserver["), let colon = line.range(of: " : ") else { continue }
             let address = String(line[colon.upperBound...])
-            if let family = ipFamily(address), !isLoopback(address, family: family) { return address }
+            if let host = NetworkDNS.resolverHost(address), !NetworkDNS.isLoopback(host) { return address }
         }
         return nil
     }
 
-    /// AF_INET or AF_INET6 for an IP literal, else nil. Scoped IPv6 (`%en0`) is refused.
+    /// AF_INET or AF_INET6 for an IP literal, else nil.
     static func ipFamily(_ text: String) -> Int32? {
-        var v4 = in_addr(), v6 = in6_addr()
-        guard !text.contains("%") else { return nil }
-        if inet_pton(AF_INET, text, &v4) == 1 { return AF_INET }
-        if inet_pton(AF_INET6, text, &v6) == 1 { return AF_INET6 }
+        if IPv4Address(text) != nil { return AF_INET }
+        if let address = IPv6Address(text), !address.isLinkLocal || address.interface != nil { return AF_INET6 }
         return nil
-    }
-
-    static func isLoopback(_ text: String, family: Int32) -> Bool {
-        family == AF_INET ? text.hasPrefix("127.") : text == "::1"
     }
 
     // MARK: Daemon
 
-    func daemonPlist(upstream: String, upstreamPort: UInt16) throws -> Data {
+    func daemonPlist(upstream: String?, upstreamPort: UInt16) throws -> Data {
+        let routing = upstream.map { ["--upstream", $0] } ?? ["--network-dns", paths.recovery.path]
         let plist: [String: Any] = [
             "Label": ServicePaths.label,
-            "ProgramArguments": [paths.filter.path, "--policy", paths.policy.path, "--upstream", upstream,
-                                 "--upstream-port", String(upstreamPort), "--listen", Self.listenAddress,
-                                 "--port", String(Self.listenPort), "--user", Self.runAsUser],
+            "ProgramArguments": [paths.filter.path, "--policy", paths.policy.path] + routing + [
+                "--upstream-port", String(upstreamPort), "--listen", Self.listenAddress,
+                "--port", String(Self.listenPort), "--user", Self.runAsUser],
             "RunAtLoad": true,
             "KeepAlive": true,
             "ThrottleInterval": 2,
@@ -289,8 +306,11 @@ public final class ServiceManager {
 
     func readRecord() throws -> RecoveryRecord? {
         guard FileManager.default.fileExists(atPath: paths.recovery.path) else { return nil }
-        do { return try JSONDecoder().decode(RecoveryRecord.self, from: Data(contentsOf: paths.recovery)) }
-        catch { throw ServiceError.failed("The recovery record at \(paths.recovery.path) is unreadable; nothing was changed.") }
+        guard let data = try? Data(contentsOf: paths.recovery),
+              let record = try? JSONDecoder().decode(RecoveryRecord.self, from: data), record.format == 1 else {
+            throw ServiceError.failed("The recovery record at \(paths.recovery.path) is unreadable; nothing was changed.")
+        }
+        return record
     }
 
     func readRegularFile(_ url: URL, what: String) throws -> Data {

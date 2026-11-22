@@ -76,6 +76,16 @@ Do not use an adult image appearing/not appearing as the sole test: SafeSearch i
 
 Rollback if the tool itself fails: `sudo networksetup -setdnsservers <service> <recorded servers>` (or `Empty` for automatic) for each service in `/Library/Application Support/Clearpath/recovery.json`, then `sudo launchctl bootout system/io.clearpath.filter`, then remove `/Library/LaunchDaemons/io.clearpath.filter.plist` and that folder. Or restore the VM snapshot.
 
+## Automatic routing in the VM
+
+Use an isolated guest network with a synthetic DHCP peer and DNS servers bound inside the guest. Supply a search domain and two different default resolver addresses, then install without `--upstream`. Victor approved guest networking and privileged tests for #10 in a disposable VM only.
+
+- Query an allowed synthetic name through the system resolver, query the short form through the search suffix, and load a synthetic HTTP page. Query a blocked name through the system resolver and confirm that no upstream saw it.
+- Renew DHCP with the second DNS address while Clearpath is running. Confirm new lookups go to that address and the daemon PID stays the same.
+- Connect a split-DNS fixture with a dedicated server. Check a DNS-SD record and an allowed private name through the scope, including UDP and TCP and IPv4 and IPv6 where available. Confirm the default fixture sees no scoped requests, including when the private resolver is unavailable. Verify `.local` discovery through Bonjour using the system APIs.
+- Verify the available network cycle, VM sleep and wake, captive portal, and reboot cases. Record the operating system, fixture or VPN, and each failed or unavailable row separately.
+- Uninstall from the installation location. Compare the saved settings with the current settings before stopping any guest DNS fixtures, and confirm the daemon is unloaded.
+
 ## Developer regression plan in that VM
 
 | Workflow | Concrete smoke test | Current evidence |
@@ -85,7 +95,7 @@ Rollback if the tool itself fails: `sudo networksetup -setdnsservers <service> <
 | npm / Python package access | `npm view` and download/install a tiny package in a temp project/venv; delete scratch afterwards | Registry/PyPI DNS and HTTPS HEAD passed; full package workflows unverified |
 | Containers | Pull a tiny image and resolve from a container; test published localhost port and Docker DNS behavior | Registry AAAA resolution passed; Docker not exercised |
 | Databases | Connect to loopback PostgreSQL and a Unix socket; connect to a private lab hostname | DNS forwarding fixture only; real database connections unverified |
-| Private DNS and VPN | Resolve lab split-DNS name before/during/after VPN connection; test Tailscale/WireGuard/OpenVPN if supported | Unverified; single-upstream PoC does not preserve scoped resolution |
+| Private DNS and VPN | Resolve lab split-DNS name before/during/after VPN connection; test Tailscale/WireGuard/OpenVPN if supported | Synthetic split DNS passed in the VM. Vendor VPN clients remain unverified. |
 | Toolchain/Apple services | Xcode download/build, Homebrew update/download in VM, code signing, local DNS-SD/mDNS, captive portal | Unverified |
 | Administrator control | Run an ordinary admin operation, stop prototype, remove only test profile/provider, restore network, restart | Full admin authority retained by design; native uninstall unverified |
 
