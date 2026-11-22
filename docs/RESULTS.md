@@ -85,7 +85,7 @@ Safari, Chrome, Firefox, private sessions, locked SafeSearch controls, browser-m
 |---|---|
 | Install | Recovery record written first (Ethernet: automatic; full `scutil --dns`). Daemon answering on `127.0.0.1:53`, then Ethernet DNS set to `127.0.0.1`. Filter process runs as `nobody`. |
 | System blocking | `dscacheutil` and Python `getaddrinfo`: `blocked.example`, `sub.blocked.example`, `adult.example`, `www.adult.example` fail; none reached the fixture upstream. `allowed.example` → `192.0.2.42`; `www.google.com` → alias of `forcesafesearch.google.com`. The VM's own background lookups also went through the filter. |
-| Restart on exit | `kill -9` of the filter: a new process answered within a second, still as `nobody`. |
+| Restart on exit | `kill -9` of the filter: a new process, still `nobody`, answered after 0.2–0.3 s in three timed kills. A filter that dies within 2 s of starting waits out launchd's 2 s `ThrottleInterval` first. |
 | Menu-bar app quit | App opened and quit; filter pid unchanged, still blocking. |
 | Logout | `launchctl bootout gui/501`: filter pid unchanged through the logout and the auto-login that followed. |
 | Reboot | Filter started at boot as `nobody`, blocked names failed, allowed names resolved once the fixture was restarted. |
