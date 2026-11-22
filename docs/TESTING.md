@@ -7,6 +7,7 @@ swift test --package-path native --scratch-path artifacts/native-build
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python -m clearpath.policy policy.example.json
 swiftc -typecheck -module-cache-path artifacts/swift-module-cache scripts/check_networkextension.swift
+swiftc -typecheck -parse-as-library -module-cache-path artifacts/swift-module-cache app/*.swift
 ```
 
 The unit/integration suite uses local fixture servers, temporary policy files and subprocesses. It tests domain boundaries and IDNA, record types, SafeSearch failure, CNAME aliases, UDP/TCP and IPv6 listeners/upstreams, EDNS, malformed input, answer truncation, response-ID validation, parallel queries, no-query logging, atomic imports, SIGHUP, graceful termination and process restart. It also **expects a bypass** when querying the fixture upstream directly.
@@ -15,7 +16,9 @@ The unit/integration suite uses local fixture servers, temporary policy files an
 
 Run the Swift command from the repo root. It uses the ignored `artifacts/` directory to avoid a Swift 6.4.2 crash when the compiler sees the same cache through both `/tmp` and `/private/tmp`.
 
-The Swift command checks that the installed SDK accepts the provider subclasses and hostname API. It does not build a signed extension, exercise callbacks or prove flow metadata availability. The upstream reproduction command is documented in UPSTREAM_AUDIT.md.
+The last command type-checks every file in `app/` with the flags `build.sh` uses, so a broken menu-bar app fails Proof without building the bundle.
+
+The `check_networkextension.swift` command checks that the installed SDK accepts the provider subclasses and hostname API. It does not build a signed extension, exercise callbacks or prove flow metadata availability. The upstream reproduction command is documented in UPSTREAM_AUDIT.md.
 
 Optional network probes:
 
