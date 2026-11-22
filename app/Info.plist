@@ -3,6 +3,7 @@
 <key>CFBundleIdentifier</key><string>org.clearpath.design-preview</string>
 <key>CFBundleName</key><string>Clearpath</string>
 <key>CFBundleExecutable</key><string>Clearpath</string>
+<key>CFBundleIconFile</key><string>AppIcon.icns</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSUIElement</key><true/>
 </dict></plist>
