@@ -109,6 +109,33 @@ enum ClearpathMain {
         let app = NSApplication.shared
         let controller = MenuBarController()
         app.delegate = controller
+        app.mainMenu = shortcutMenu()
         app.run()
+    }
+
+    /// Never shown, since Clearpath has no menu bar of its own, but it gives the windows the
+    /// standard shortcuts the SwiftUI app had: Cmd-W closes, Cmd-Q quits, editing keys work in fields.
+    private static func shortcutMenu() -> NSMenu {
+        func menu(_ title: String, _ items: [(String, Selector, String, NSEvent.ModifierFlags)]) -> NSMenuItem {
+            let submenu = NSMenu(title: title)
+            for (name, action, key, flags) in items {
+                submenu.addItem(withTitle: name, action: action, keyEquivalent: key).keyEquivalentModifierMask = flags
+            }
+            let item = NSMenuItem()
+            item.submenu = submenu
+            return item
+        }
+        let main = NSMenu()
+        main.addItem(menu("Clearpath", [("Quit Clearpath", #selector(NSApplication.terminate(_:)), "q", .command)]))
+        main.addItem(menu("Edit", [
+            ("Undo", Selector(("undo:")), "z", .command),
+            ("Redo", Selector(("redo:")), "z", [.command, .shift]),
+            ("Cut", #selector(NSText.cut(_:)), "x", .command),
+            ("Copy", #selector(NSText.copy(_:)), "c", .command),
+            ("Paste", #selector(NSText.paste(_:)), "v", .command),
+            ("Select All", #selector(NSText.selectAll(_:)), "a", .command),
+        ]))
+        main.addItem(menu("Window", [("Close", #selector(NSWindow.performClose(_:)), "w", .command)]))
+        return main
     }
 }
