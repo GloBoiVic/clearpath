@@ -19,6 +19,20 @@ final class SettingsWindow: NSWindow {
         if event.type == .keyDown, event.keyCode == 53, attachedSheet == nil { return }
         super.sendEvent(event)
     }
+
+    /// The settings screens are scrolling forms with no natural height, so the window starts
+    /// at least `height` tall. Its width is fixed by the view; it can be resized taller or shorter.
+    static func make<Content: View>(_ title: String, _ view: Content, height: CGFloat = 480) -> SettingsWindow {
+        let controller = NSHostingController(rootView: view)
+        let fitting = controller.view.fittingSize  // measured before sizingOptions, which make it zero
+        controller.sizingOptions = [.minSize, .maxSize]
+        let window = SettingsWindow(contentViewController: controller)
+        window.setContentSize(NSSize(width: fitting.width, height: max(fitting.height, height)))
+        window.title = title
+        window.isReleasedWhenClosed = false
+        window.center()
+        return window
+    }
 }
 
 /// Owns the shield in the menu bar, the panel it opens and the app's windows.
@@ -100,11 +114,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
         if let open = windows[id], open.isVisible {
             window = open
         } else {
-            window = SettingsWindow(contentViewController: NSHostingController(rootView: view))
-            window.title = title
-            window.styleMask.remove(.resizable)
-            window.isReleasedWhenClosed = false
-            window.center()
+            window = SettingsWindow.make(title, view)
             windows[id] = window
         }
         NSApp.activate(ignoringOtherApps: true)
