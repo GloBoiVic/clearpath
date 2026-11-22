@@ -95,7 +95,7 @@ It reads the policy JSON and domain list text files and writes the policy JSON o
 ## Not done today
 
 - The menu-bar panel uses synthetic protection status. Partner settings works with the loopback pairing service and synthetic email sink. The production app, remote partner service and an installer for the app are pending. Only `clearpath-service install` changes DNS settings, and it has run only in a disposable VM. Nothing changes profiles, certificates or Screen Time.
-- The Swift filtering engine (policy, DNS handling, upstream transport) from the `native-dns-foundation` branch is in `native/`. It runs as `clearpath-filter`, a loopback DNS server, tested against a local fixture upstream, and as the `clearpath-service` LaunchDaemon proven in a disposable VM. It forwards to one upstream chosen at install; following network changes and VPN DNS is pending (#10). The DNS proxy extension code stays on that branch as the upgrade path.
+- The Swift filtering engine (policy, DNS handling, upstream transport) from the `native-dns-foundation` branch is in `native/`. It runs as `clearpath-filter`, a loopback DNS server, and as the `clearpath-service` LaunchDaemon. Automatic routing uses current network resolver state for forwarded lookups. The VPN and developer-network acceptance results are tracked in [RESULTS.md](RESULTS.md). The DNS proxy extension code stays on the foundation branch as the upgrade path.
 - Cross-browser protection is not validated; the VM procedure in `docs/TESTING.md` has not been run.
 - The example blocklist has three real domains plus test fixtures.
 - No Python linter, formatter or type checker.

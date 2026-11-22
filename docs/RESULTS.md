@@ -95,3 +95,23 @@ Safari, Chrome, Firefox, private sessions, locked SafeSearch controls, browser-m
 | Port 53 taken | Install refused (exit 2) and changed nothing. |
 
 Not shown here: an install interrupted after some services had moved to the filter (covered by `ServiceTests` with a simulated Mac), more than one network service, VPNs and network changes (#10), and browsers (#11, #25).
+
+## Automatic DNS routing in a disposable VM
+
+Issue #10 used a disposable Tart clone of the macOS 26.6.2 (25G83) arm64 image above. The virtual Ethernet peer supplied synthetic DHCP and discarded other frames. The guest used the search domain `lab.example` and two DNS fixtures bound to guest loopback aliases. A separate IPv6 loopback server backed a supplemental System Configuration scope for `vpn.example`.
+
+| Check | Observed |
+|---|---|
+| Ordinary lookup and browser | The installed daemon returned the first DHCP resolver's answer. `dscacheutil` expanded `public` to `public.lab.example`. Safari requested the synthetic page and received HTTP 200. |
+| Blocking and SafeSearch | Public and scoped blocked fixtures returned NXDOMAIN and did not reach either upstream. The SafeSearch response used the forced target, which the default fixture resolved. |
+| Split DNS and IPv6 | Queries for `host.vpn.example` used the distinct IPv6 scope over UDP and TCP. The default fixture did not receive those names. A scope aimed back at the listener returned SERVFAIL. |
+| Developer discovery | A scoped unicast DNS-SD PTR query reached the private fixture. `dns-sd` registered and discovered the lab service on `.local` through Bonjour. |
+| Network change and outage | Disabling Ethernet temporarily returned SERVFAIL for an allowed lookup. On re-enabling Ethernet, DHCP supplied the second resolver and the same daemon answered from it. |
+| Captive portal redirect | The synthetic portal name resolved and its HTTP redirect reached the sign-in page. macOS Captive Network Assistant remains unverified. |
+| Suspend and resume | The same daemon PID returned an allowed answer and kept the blocked fixture unresolved after Tart resumed the guest. The guest rejected native `pmset sleepnow` with `0xe00002e2`. |
+| Reboot | Launchd started a new daemon. The blocked fixture returned NXDOMAIN before the lab DNS servers started. Allowed DNS resumed when the guest fixtures came back. |
+| Rollback | Uninstall restored automatic DNS and the exact recorded `scutil --dns` output. A second installation with two explicit DNS servers used the saved first server, then restored the server order and search domains exactly. The daemon stopped and the service reported uninstalled. |
+
+A loopback regression changed the active route after a truncated private UDP reply and verified that the TCP retry stayed on the private resolver. The final guest build also sent an explicitly scoped `corp.local` lookup to the IPv6 fixture and kept an ordinary Bonjour name out of unicast DNS.
+
+The split-DNS fixture exercises macOS resolver state. Vendor VPN compatibility, physical Ethernet-to-Wi-Fi handoff, IPv6 as the VM's default resolver, and traffic sent around the loopback filter remain acceptance items.

@@ -1,7 +1,13 @@
 import Foundation
 
 public protocol DNSUpstream: Sendable {
+    /// Select an upstream once so transport retries stay on the same route.
+    func forQuestion(named name: DNSName) -> any DNSUpstream
     func exchange(_ packet: [UInt8], tcp: Bool) async throws -> [UInt8]
+}
+
+public extension DNSUpstream {
+    func forQuestion(named name: DNSName) -> any DNSUpstream { self }
 }
 
 public struct Resolver: Sendable {
@@ -65,11 +71,12 @@ public struct Resolver: Sendable {
         let id = UInt16.random(in: .min ... .max)
         request[0] = UInt8(id >> 8); request[1] = UInt8(id & 255)
         let sent = try DNSMessage(request)
-        var response = try DNSMessage(await upstream.exchange(request, tcp: tcp))
+        let route = upstream.forQuestion(named: sent.name)
+        var response = try DNSMessage(await route.exchange(request, tcp: tcp))
         try response.validateResponse(to: sent)
         if response.truncated {
             guard !tcp else { throw DNSError.malformed }
-            response = try DNSMessage(await upstream.exchange(request, tcp: true))
+            response = try DNSMessage(await route.exchange(request, tcp: true))
             try response.validateResponse(to: sent)
             guard !response.truncated else { throw DNSError.malformed }
         }

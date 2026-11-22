@@ -1,4 +1,5 @@
 import Foundation
+import SystemConfiguration
 
 /// The macOS tools the service manager drives, by absolute path so `PATH` cannot swap them.
 public enum Tool: String, Sendable {
@@ -13,10 +14,17 @@ public struct CommandResult: Sendable {
     public init(status: Int32, output: String) { self.status = status; self.output = output }
 }
 
+public struct NetworkLocation: Sendable {
+    public let id: String?
+    public let serviceIDs: [String: String]
+    public init(id: String?, serviceIDs: [String: String]) { self.id = id; self.serviceIDs = serviceIDs }
+}
+
 /// Everything that touches the running system. Tests substitute a fake; `MacSystem` is real.
 public protocol SystemControl {
     var isRoot: Bool { get }
     func run(_ tool: Tool, _ arguments: [String]) throws -> CommandResult
+    func networkLocation() throws -> NetworkLocation
     /// True when nothing holds the loopback UDP or TCP port.
     func portIsFree(_ port: UInt16) -> Bool
     /// True when a DNS server on loopback answers a header-only probe with FORMERR. The probe
@@ -29,6 +37,24 @@ public struct MacSystem: SystemControl {
     public init() {}
 
     public var isRoot: Bool { geteuid() == 0 }
+
+    public func networkLocation() throws -> NetworkLocation {
+        guard let preferences = SCPreferencesCreate(nil, "Clearpath" as CFString, nil),
+              let location = SCNetworkSetCopyCurrent(preferences),
+              let locationID = SCNetworkSetGetSetID(location) as String?,
+              let services = SCNetworkSetCopyServices(location) as? [SCNetworkService] else {
+            throw ServiceError.failed("Could not read macOS network service identifiers.")
+        }
+        var identifiers: [String: String] = [:]
+        for service in services {
+            guard let name = SCNetworkServiceGetName(service) as String?,
+                  let id = SCNetworkServiceGetServiceID(service) as String?,
+                  identifiers.updateValue(id, forKey: name) == nil else {
+                throw ServiceError.failed("Could not identify each macOS network service uniquely.")
+            }
+        }
+        return NetworkLocation(id: locationID, serviceIDs: identifiers)
+    }
 
     public func run(_ tool: Tool, _ arguments: [String]) throws -> CommandResult {
         let process = Process()

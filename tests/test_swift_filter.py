@@ -301,8 +301,10 @@ class SwiftFilterProcess(unittest.TestCase):
     def test_bad_upstream_or_policy_refuses_to_start(self):
         cases = (
             (["--upstream", "resolver.example"], 2),            # hostname would need OS resolution
+            (["--upstream", "0.0.0.0"], 2),
             (["--upstream", "127.0.0.1", "--upstream-port", "0"], 2),
             (["--upstream", "127.0.0.1", "--upstream-port", "1053", "--port", "1053"], 2),  # loop to itself
+            (["--upstream", "::ffff:127.0.0.1", "--upstream-port", "1053", "--port", "1053"], 2),
         )
         for extra, code in cases:
             result = subprocess.run([str(self.binary), "--policy", str(self.policy), *extra], cwd=self.tmp, capture_output=True, text=True, timeout=5)

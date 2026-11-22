@@ -12,10 +12,10 @@ let package = Package(
     targets: [
         .target(name: "ClearpathCore"),
         .target(name: "ClearpathNetwork", dependencies: ["ClearpathCore"]),
-        .executableTarget(name: "ClearpathFilter", dependencies: ["ClearpathCore", "ClearpathNetwork"]),
-        .target(name: "ClearpathService", dependencies: ["ClearpathCore"]),
+        .executableTarget(name: "ClearpathFilter", dependencies: ["ClearpathCore", "ClearpathNetwork", "ClearpathService"]),
+        .target(name: "ClearpathService", dependencies: ["ClearpathCore", "ClearpathNetwork"]),
         .executableTarget(name: "ClearpathServiceTool", dependencies: ["ClearpathService"]),
-        .testTarget(name: "ClearpathCoreTests", dependencies: ["ClearpathCore", "ClearpathNetwork"]),
+        .testTarget(name: "ClearpathCoreTests", dependencies: ["ClearpathCore", "ClearpathNetwork", "ClearpathService"]),
         .testTarget(name: "ClearpathServiceTests", dependencies: ["ClearpathService"])
     ]
 )
