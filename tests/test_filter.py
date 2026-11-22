@@ -72,6 +72,12 @@ class PolicySetup(unittest.TestCase):
         os.replace(candidate, self.path)
 
 class PolicyTests(PolicySetup):
+    def test_shared_native_policy_corpus(self):
+        policy = Policy.load(self.path)
+        for case in json.loads((ROOT / "tests/fixtures/policy-cases.json").read_text()):
+            action, target = policy.decide(case["host"])
+            self.assertEqual(action + (":" + target if target else ""), case["decision"])
+
     def test_boundaries_case_and_idn(self):
         p = Policy.load(self.path)
         for host in ("adult.example", "sub.adult.example", "ADULT.Example."):
