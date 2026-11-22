@@ -18,6 +18,7 @@ enum Sample: String {
 
 struct Panel: View {
     let sample: Sample
+    @Environment(\.openWindow) private var openWindow
     @State private var notice: String?
 
     var body: some View {
@@ -49,7 +50,10 @@ struct Panel: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             destination("Blocked sites", icon: "globe")
-            destination("Partner settings", icon: "person.crop.circle")
+            destination("Partner settings", icon: "person.crop.circle") {
+                openWindow(id: "partner-settings")
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
         .padding(16)
         .frame(width: 320)
@@ -69,8 +73,10 @@ struct Panel: View {
         }.accessibilityElement(children: .combine)
     }
 
-    private func destination(_ title: String, icon: String) -> some View {
-        Button { notice = title } label: {
+    private func destination(_ title: String, icon: String, action: (() -> Void)? = nil) -> some View {
+        Button {
+            if let action { action() } else { notice = title }
+        } label: {
             HStack(spacing: 8) {
                 Image(systemName: icon).frame(width: 18).foregroundStyle(.secondary)
                 Text(title)
@@ -112,5 +118,10 @@ struct ClearpathApp: App {
             PathShield(sample: sample)
                 .accessibilityLabel("Clearpath design preview. \(sample.headline). Partner: \(sample.partner)")
         }.menuBarExtraStyle(.window)
+        Window("Partner settings", id: "partner-settings") {
+            PartnerSettings()
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
     }
 }

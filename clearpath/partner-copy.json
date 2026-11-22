@@ -1,0 +1,24 @@
+{
+  "title": "Clearpath partner invitation",
+  "invited": "You have been invited to be a Clearpath {role} partner",
+  "email": "Open this link to review and accept the invitation.",
+  "accept": "Accept invitation",
+  "accepted": "Invitation accepted",
+  "unavailable": "This invitation is no longer available.",
+  "settings": {
+    "primary": "Primary partner",
+    "backup": "Backup partner",
+    "recommendation": "A backup partner is strongly recommended.",
+    "send": "Send invitation",
+    "replace": "Replace invitation",
+    "refresh": "Refresh",
+    "empty": "No invitation",
+    "pending": "Invitation pending",
+    "expired": "Invitation expired",
+    "accepted": "Accepted",
+    "email": "Email",
+    "failure": "Could not update invitations. Check that the pairing service is running, then refresh.",
+    "invalidEmail": "Enter a synthetic address ending in @example.test.",
+    "conflict": "Invitation status changed. Refresh before making another change."
+  }
+}

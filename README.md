@@ -2,7 +2,25 @@
 
 Clearpath is a free, open-source macOS app that blocks adult and NSFW websites in every browser, with an accountability partner instead of spyware. What V1 is, and why, is in [docs/BRIEF.md](docs/BRIEF.md); how it is built is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Do not fork distraction-free's resolver or installer. DNS filtering works when requests reach it; arbitrary encrypted DNS, proxies, VPNs and a willing administrator remain bypasses. Cross-browser protection is **not yet validated**.
 
-This repository contains an isolated Python DNS proof of concept, automated tests, upstream bug reproductions, inert browser-policy examples, and an engineering assessment. Run `./build.sh` on macOS with the Swift toolchain to open the menu-bar design preview. Click the shield to see synthetic status data. The preview is independent of the DNS harness and partner service. Nothing here installs a service, edits system DNS, changes Screen Time, installs certificates, or removes administrator access.
+This repository contains an isolated Python DNS proof of concept, automated tests, upstream bug reproductions, inert browser-policy examples, and an engineering assessment. Run `./build.sh` on macOS with the Swift toolchain to open the menu-bar design preview. Click the shield to see synthetic status data. The preview is independent of the DNS harness. Its Partner settings window can connect to a local pairing service. Nothing here installs a service, edits system DNS, changes Screen Time, installs certificates, or removes administrator access.
+
+## Try partner invitations locally
+
+Run these commands from the repo on macOS. The pairing service uses Python 3.9+ and the standard library.
+
+```sh
+partner_demo_dir=$(mktemp -d)
+python3 -m clearpath.partners --state-dir "$partner_demo_dir" &
+partner_demo_pid=$!
+./build.sh --build-only
+CLEARPATH_PARTNER_STATE="$partner_demo_dir" artifacts/Clearpath.app/Contents/MacOS/Clearpath
+```
+
+Open the shield menu and choose **Partner settings**. Invite synthetic addresses ending in `@example.test`. The service delivers messages as private `.eml` files under `$partner_demo_dir/mail`. View the message as text and paste the complete invitation link into a browser. Choose **Accept invitation**, then choose **Refresh** in Partner settings. Opening the link alone leaves the invitation pending. You can replace an unaccepted invite, which immediately invalidates the previous link. Invitations expire after seven days.
+
+The service binds only to `127.0.0.1`. The default port is 8765. To use another port, pass `--port` to the service and set `CLEARPATH_PARTNER_PORT` to the same value when launching the app. Run the service and app as the same local user. The state directory contains the app's owner credential, one pairing database and the mail sink. Keep the entire directory private, including the invitation links in the mail sink. To stop the service after quitting the app, run `kill "$partner_demo_pid"`.
+
+This slice uses a local file sink with synthetic addresses. Remote deployment and real email delivery are pending.
 
 ## Run locally
 
