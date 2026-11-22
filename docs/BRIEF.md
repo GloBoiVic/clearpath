@@ -81,7 +81,8 @@ On Victor's Mac, for a full day of normal use: Safari, Chrome and Firefox get bl
 
 1. **Filter DNS on a loopback test port.** `python -m clearpath.dns` (`clearpath/dns.py`) listens on `127.0.0.1:1053`, answers blocked domains with NXDOMAIN, answers configured search hosts with their forced-safe address, and forwards everything else to one upstream DNS server you name. Browsers don't use it automatically.
 2. **Manage the block list.** `python -m clearpath.policy` (`clearpath/policy.py`) validates a policy file and imports a plain domain list into it, replacing the file atomically. The running filter reloads on `kill -HUP`, keeping the old policy if the new one is invalid.
-3. **Record evidence.** 28 automated tests (`tests/test_filter.py`), an optional live probe against a public DNS server (`scripts/live_smoke.py`), the upstream audit (`scripts/audit_upstream.py`) and a Swift check that the macOS SDK has the DNS Proxy API (`scripts/check_networkextension.swift`). Results are in `docs/RESULTS.md`.
+3. **Install the filter as a background service (disposable VM only so far).** `clearpath-service install` (`native/Sources/ClearpathService`) records each network service's DNS, runs `clearpath-filter` as a root LaunchDaemon on `127.0.0.1:53` that drops to `nobody`, and points system DNS at it. `clearpath-service uninstall` restores the recorded DNS, then removes the daemon and Clearpath's files. `clearpath-service status` reports the state as JSON.
+4. **Record evidence.** 28 automated tests (`tests/test_filter.py`), an optional live probe against a public DNS server (`scripts/live_smoke.py`), the upstream audit (`scripts/audit_upstream.py`) and a Swift check that the macOS SDK has the DNS Proxy API (`scripts/check_networkextension.swift`). Results are in `docs/RESULTS.md`.
 
 Commands:
 
@@ -93,8 +94,8 @@ It reads the policy JSON and domain list text files and writes the policy JSON o
 
 ## Not done today
 
-- The menu-bar panel uses synthetic protection status. Partner settings works with the loopback pairing service and synthetic email sink. The production app, background service, remote partner service and installer are pending. Nothing changes the Mac's DNS settings, profiles, certificates or Screen Time.
-- The Swift filtering engine (policy, DNS handling, upstream transport) from the `native-dns-foundation` branch is in `native/`. It runs as `clearpath-filter`, a loopback DNS server on a high port, tested against a local fixture upstream. It is not yet a system service and the Mac's DNS does not point at it. The DNS proxy extension code stays on that branch as the upgrade path.
+- The menu-bar panel uses synthetic protection status. Partner settings works with the loopback pairing service and synthetic email sink. The production app, remote partner service and an installer for the app are pending. Only `clearpath-service install` changes DNS settings, and it has run only in a disposable VM. Nothing changes profiles, certificates or Screen Time.
+- The Swift filtering engine (policy, DNS handling, upstream transport) from the `native-dns-foundation` branch is in `native/`. It runs as `clearpath-filter`, a loopback DNS server, tested against a local fixture upstream, and as the `clearpath-service` LaunchDaemon proven in a disposable VM. It forwards to one upstream chosen at install; following network changes and VPN DNS is pending (#10). The DNS proxy extension code stays on that branch as the upgrade path.
 - Cross-browser protection is not validated; the VM procedure in `docs/TESTING.md` has not been run.
 - The example blocklist has three real domains plus test fixtures.
 - No Python linter, formatter or type checker.

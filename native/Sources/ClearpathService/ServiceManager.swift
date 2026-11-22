@@ -122,7 +122,7 @@ public final class ServiceManager {
             }
             log("DNS for every network service now points at the filter.")
         } catch {
-            log("Install failed: \(error). Rolling back.")
+            log("Install failed: \(error) Rolling back.")
             do { try uninstall() } catch let rollback {
                 throw ServiceError.failed("Install failed (\(error)) and rollback failed (\(rollback)). The recovery record is kept at \(paths.recovery.path).")
             }
