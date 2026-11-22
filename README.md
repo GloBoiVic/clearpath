@@ -35,6 +35,19 @@ dig @127.0.0.1 -p 1053 www.google.com HTTPS
 
 Expected: NXDOMAIN, Google forced-safe CNAME plus any safe IPv6 records, Bing strict CNAME/address chain, and an empty HTTPS answer. Ordinary browsers will **not** use this high-port listener automatically.
 
+## Swift filter
+
+`native/` holds the Swift filter engine that V1 ships: policy, DNS handling, upstream transport, and `clearpath-filter`, a loopback-only UDP/TCP DNS server with the same options as the Python prototype. It is not installed as a service and does not change the Mac's DNS.
+
+```sh
+swift test --package-path native --scratch-path artifacts/native-build
+swift build --package-path native --scratch-path artifacts/native-build --product clearpath-filter
+"$(swift build --package-path native --scratch-path artifacts/native-build --show-bin-path)/clearpath-filter" \
+  --policy policy.example.json --upstream 1.1.1.1 --port 1053
+```
+
+The listener accepts only `127.0.0.1` or `::1` and ports 1024 and up. `--upstream` must be an IP address; that resolver sees allowed names and safe-target lookups. An invalid policy stops startup. It does not reload the policy on SIGHUP yet; restart it after a change.
+
 ## Maintain a custom list
 
 Copy the example policy to a working file. It contains just three real adult domains and synthetic fixtures, **not a complete adult blocklist**. Each block covers the apex and subdomains. SafeSearch covers only the exact hostnames configured.

@@ -3,12 +3,15 @@
 ## Tests safe to run in this workspace
 
 ```sh
+swift test --package-path native --scratch-path artifacts/native-build
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python -m clearpath.policy policy.example.json
 swiftc -typecheck -module-cache-path artifacts/swift-module-cache scripts/check_networkextension.swift
 ```
 
-The unit/integration suite uses local fixture servers, temporary policy files and subprocesses. It tests domain boundaries and IDNA, record types, SafeSearch failure, CNAME aliases, UDP/TCP and IPv6 listeners/upstreams, EDNS, malformed input, answer truncation, response-ID validation, parallel queries, no-query logging, atomic imports, SIGHUP, graceful termination and process restart. It also **expects a bypass** when querying the fixture upstream directly. This is deliberate evidence against overstating DNS-only protection.
+The unit/integration suite uses local fixture servers, temporary policy files and subprocesses. It tests domain boundaries and IDNA, record types, SafeSearch failure, CNAME aliases, UDP/TCP and IPv6 listeners/upstreams, EDNS, malformed input, answer truncation, response-ID validation, parallel queries, no-query logging, atomic imports, SIGHUP, graceful termination and process restart. It also **expects a bypass** when querying the fixture upstream directly.
+
+`tests/test_swift_filter.py` builds the Swift `clearpath-filter` and runs it from a temp folder on a free loopback port against a loopback fixture upstream. It checks blocked apex and subdomains, forced Google/Bing/DuckDuckGo answers, allowed answers, HTTPS/SVCB, CNAME aliases, an unavailable safe target, silent, malformed and mismatched upstream replies, malformed client queries, TCP pipelining, IPv6, the loopback and port guards, startup refusal on a bad policy or upstream, and that no query name is logged. The Swift package tests cover the same engine in-process. This is deliberate evidence against overstating DNS-only protection.
 
 Run the Swift command from the repo root. It uses the ignored `artifacts/` directory to avoid a Swift 6.4.2 crash when the compiler sees the same cache through both `/tmp` and `/private/tmp`.
 

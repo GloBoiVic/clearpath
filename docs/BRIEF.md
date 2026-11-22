@@ -94,7 +94,7 @@ It reads the policy JSON and domain list text files and writes the policy JSON o
 ## Not done today
 
 - The menu-bar panel is a synthetic design preview. The production app, background service, partner service and installer are pending. Nothing changes the Mac's DNS settings, profiles, certificates or Screen Time.
-- A Swift filtering engine built for Apple's DNS proxy extension exists on the unmerged branch `native-dns-foundation`. It has been built and unit-tested, never run on a real Mac. V1 reuses its filtering code.
+- The Swift filtering engine (policy, DNS handling, upstream transport) from the `native-dns-foundation` branch is in `native/`. It runs as `clearpath-filter`, a loopback DNS server on a high port, tested against a local fixture upstream. It is not yet a system service and the Mac's DNS does not point at it. The DNS proxy extension code stays on that branch as the upgrade path.
 - Cross-browser protection is not validated; the VM procedure in `docs/TESTING.md` has not been run.
 - The example blocklist has three real domains plus test fixtures.
 - No Python linter, formatter or type checker.

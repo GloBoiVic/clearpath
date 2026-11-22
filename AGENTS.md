@@ -61,14 +61,15 @@ An approval covers only the action it names.
 
 | Command | When | Reviewer may run |
 |---|---|---|
-| `.venv/bin/python -m unittest discover -s tests -v` | every change | yes |
+| `swift test --package-path native --scratch-path artifacts/native-build` | every change | yes |
+| `.venv/bin/python -m unittest discover -s tests -v` (builds and runs the Swift filter live on loopback) | every change | yes |
 | `.venv/bin/python -m clearpath.policy policy.example.json` | every change | yes |
 | `swiftc -typecheck -module-cache-path artifacts/swift-module-cache scripts/check_networkextension.swift` | every change | yes |
 | run `clearpath.dns` or `clearpath.policy` on a synthetic policy in a temp folder, with a loopback fixture upstream | any behavior change | yes |
 
 Set up once with `python3 -m venv .venv` and `.venv/bin/python -m pip install -r requirements.txt`.
 
-Prove behavior at the boundary it crosses: real files in temp folders, loopback fixture DNS servers for upstream DNS, the real command line for the tool's interface. If something can't be run, say so in the PR; don't claim it's proven. The Proof workflow runs the loopback tests and example policy validation on Python 3.9 and the Swift SDK type-check on macOS for every PR to `main`. The PR's Proof section is the record of what ran.
+Prove behavior at the boundary it crosses: real files in temp folders, loopback fixture DNS servers for upstream DNS, the real command line for the tool's interface. If something can't be run, say so in the PR; don't claim it's proven. The Proof workflow runs the Swift tests, the loopback tests (including the live Swift filter), example policy validation on Python 3.9 and the Swift SDK type-check on macOS for every PR to `main`. The PR's Proof section is the record of what ran.
 
 ## Agents and skills
 
