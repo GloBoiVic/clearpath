@@ -47,7 +47,7 @@ The Finder icon uses a white shield with a winding blue path on a rounded blue t
 
 The menu-bar mark is a monochrome path inside a shield. Its silhouette or badge distinguishes protection and partner states. Give it an accessibility label naming both. The panel opens with **Clearpath**, then **Protection is on** with a green check when protection is verified. Below it, show **Partner** and **Pending requests** as separate rows. Place **Block a site** directly below the divider, followed by **Blocked sites** and **Partner settings**.
 
-Use words and symbols together for status. An unknown filter state gets an explicit status message. If restarting fails, give **Restore internet** priority and explain that using it alerts the partner. Keep browsing history, blocked-attempt counts and pause controls out of every view.
+Place **Set up protection** after **Partner settings**. Use words and symbols together for status. An unknown filter state gets an explicit status message. If restarting fails, give **Restore internet** priority and explain that using it alerts the partner. Keep browsing history, blocked-attempt counts and pause controls out of every view.
 
 ## Screens
 
@@ -67,6 +67,10 @@ flowchart LR
     Panel --> Partners[Partner settings]
     Panel --> Uninstall
 ~~~
+
+### Setup
+
+Use native grouped sections for **DNS filter**, **Safari**, and **Chrome and Firefox**. **Check DNS status** reports the result of the most recent check. Explain the Private Relay setting, reveal the browser profile in Finder, and specify how to check its effective settings in each browser.
 
 ### Partner settings
 
