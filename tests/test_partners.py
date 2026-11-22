@@ -69,6 +69,51 @@ class PartnerInvitationTests(unittest.TestCase):
         path = "/invite/" + role if role else link.path
         return self.request("POST", path, {"token": link.fragment}, owner=False, form=True)
 
+    def invite_with_headers(self, *, host=None, duplicate_authorization=False,
+                            content_type="application/json", body_size=None,
+                            transfer_encoding=None):
+        body = json.dumps({"email": "guard@example.test", "revision": 0}).encode()
+        if body_size is not None:
+            body = body.ljust(body_size)
+        connection = HTTPConnection("127.0.0.1", self.port, timeout=3)
+        try:
+            connection.putrequest("POST", "/partners/primary", skip_host=host is not None)
+            if host is not None:
+                connection.putheader("Host", host)
+            connection.putheader("Authorization", "Bearer " + self.key)
+            if duplicate_authorization:
+                connection.putheader("Authorization", "Bearer invalid")
+            connection.putheader("Content-Type", content_type)
+            connection.putheader("Content-Length", str(len(body)))
+            if transfer_encoding is not None:
+                connection.putheader("Transfer-Encoding", transfer_encoding)
+            connection.endheaders(body)
+            response = connection.getresponse()
+            response.read()
+            return response.status
+        finally:
+            connection.close()
+
+    def assert_invite_refused(self, expected_status, **options):
+        self.assertEqual(self.invite_with_headers(**options), expected_status)
+        self.assertEqual(self.slots()["primary"]["status"], "empty")
+        self.assertFalse(list((self.state / "mail").iterdir()))
+
+    def test_wrong_host_header_refuses_invitation(self):
+        self.assert_invite_refused(400, host="untrusted.example.test")
+
+    def test_duplicate_authorization_header_refuses_invitation(self):
+        self.assert_invite_refused(401, duplicate_authorization=True)
+
+    def test_oversized_content_length_refuses_invitation(self):
+        self.assert_invite_refused(400, body_size=2049)
+
+    def test_transfer_encoding_header_refuses_invitation(self):
+        self.assert_invite_refused(400, transfer_encoding="chunked")
+
+    def test_wrong_content_type_refuses_invitation(self):
+        self.assert_invite_refused(400, content_type="text/plain")
+
     def test_both_invitations_correction_acceptance_and_link_rejections(self):
         self.assertEqual(self.invite("primary", "initial"), 201)
         initial = self.link("initial")
@@ -116,3 +161,26 @@ class PartnerInvitationTests(unittest.TestCase):
         self.assertEqual(self.invite("primary", "after", revision=1), 503)
         self.assertEqual(self.slots()["primary"]["email"], "before@example.test")
         self.assertEqual(self.accept(previous)[0], 200)
+
+
+class PairingStartupTests(unittest.TestCase):
+    def test_state_directory_readable_by_group_or_others_prevents_startup(self):
+        for mode in (0o740, 0o704):
+            with self.subTest(mode=oct(mode)), tempfile.TemporaryDirectory() as directory:
+                state = Path(directory)
+                state.chmod(mode)
+                with subprocess.Popen(
+                    [sys.executable, "-m", "clearpath.partners",
+                     "--state-dir", directory, "--port", "0"],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                ) as process:
+                    # The first line is the startup result. A service that
+                    # starts despite unsafe permissions must be terminated.
+                    result = process.stdout.readline()
+                    if result:
+                        process.terminate()
+                    _, error = process.communicate(timeout=5)
+                    self.assertEqual(result, "")
+                    self.assertEqual(process.returncode, 1)
+                    self.assertEqual(error.strip(), "Could not start the pairing service.")
+                self.assertFalse(list(state.iterdir()))
