@@ -70,6 +70,8 @@ flowchart LR
     Panel --> Uninstall
 ~~~
 
+Setup and Partner settings open as their own windows. Cmd-W closes them. Escape does nothing there and makes no sound, as in other Mac settings windows.
+
 ### Setup
 
 Use native grouped sections for **DNS filter**, **Safari**, and **Chrome and Firefox**. **Check DNS status** reports the result of the most recent check. Explain the Private Relay setting, reveal the browser profile in Finder, and specify how to check its effective settings in each browser.
@@ -94,5 +96,6 @@ Menu-bar panel. SwiftUI screen in `app/Clearpath.swift`. Approved by Victor on 2
 | System appearance and accent | Victor accepted the recommendation | Respects the Mac’s preferences |
 | Initial dimensions and reference colors | Agent | Gives the first SwiftUI panel measurable starting values |
 | Panel opens below the menu bar, extending right from the shield, and flips left near the screen edge | Victor chose on 2026-11-22 | Opens beside the shield rather than straight down, without covering the menu bar |
+| Settings windows close with Cmd-W, not Escape, and Escape is silent | Victor decided on 2026-11-22 | Follows the Mac convention and avoids losing a half-typed partner email |
 
 Approved by Victor on 2026-11-21.
