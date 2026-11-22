@@ -47,6 +47,8 @@ The Finder icon uses a white shield with a winding blue path on a rounded blue t
 
 The menu-bar mark is a monochrome path inside a shield. Its silhouette or badge distinguishes protection and partner states. Give it an accessibility label naming both. The panel opens with **Clearpath**, then **Protection is on** with a green check when protection is verified. Below it, show **Partner** and **Pending requests** as separate rows. Place **Block a site** directly below the divider, followed by **Blocked sites** and **Partner settings**.
 
+The panel opens just below the menu bar with its left edge at the shield, so it extends to the right. When there is no room on the right, it flips so its right edge meets the shield's right edge, and it always stays on the icon's screen. It has no arrow and uses the popover material. Clicking outside it or pressing Escape closes it.
+
 Place **Set up protection** after **Partner settings**. Use words and symbols together for status. An unknown filter state gets an explicit status message. If restarting fails, give **Restore internet** priority and explain that using it alerts the partner. Keep browsing history, blocked-attempt counts and pause controls out of every view.
 
 ## Screens
@@ -67,6 +69,8 @@ flowchart LR
     Panel --> Partners[Partner settings]
     Panel --> Uninstall
 ~~~
+
+Setup and Partner settings open as their own windows. Cmd-W closes them. Escape does nothing there and makes no sound, as in other Mac settings windows.
 
 ### Setup
 
@@ -91,5 +95,7 @@ Menu-bar panel. SwiftUI screen in `app/Clearpath.swift`. Approved by Victor on 2
 | Control Center and System Settings references, comfortable density | Victor accepted the recommendation | Protection, partner status and the primary action are visible at a glance |
 | System appearance and accent | Victor accepted the recommendation | Respects the Mac’s preferences |
 | Initial dimensions and reference colors | Agent | Gives the first SwiftUI panel measurable starting values |
+| Panel opens below the menu bar, extending right from the shield, and flips left near the screen edge | Victor chose on 2026-11-22 | Opens beside the shield rather than straight down, without covering the menu bar |
+| Settings windows close with Cmd-W, not Escape, and Escape is silent | Victor decided on 2026-11-22 | Follows the Mac convention and avoids losing a half-typed partner email |
 
 Approved by Victor on 2026-11-21.
