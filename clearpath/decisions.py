@@ -38,6 +38,18 @@ def invitation(role, address, link):
     return message(address, COPY["title"], f"{invited}. {COPY['email']}\n\n{link}")
 
 
+def publish_batch(batch, messages):
+    # A complete batch is visible at its stable path even if the outbox
+    # transaction is interrupted before it acknowledges delivery.
+    if not batch.is_dir():
+        with tempfile.TemporaryDirectory(dir=batch.parent) as directory:
+            draft = Path(directory) / "batch"
+            draft.mkdir(mode=0o700)
+            for role, content in messages:
+                (draft / (role + ".eml")).write_bytes(content)
+            draft.rename(batch)
+
+
 def digest(token):
     return hashlib.sha256(token.encode("ascii")).digest()
 
@@ -325,16 +337,9 @@ class Decisions:
                 SELECT DISTINCT request_id, expired, kind FROM decision_mail JOIN requests ON id = request_id
             """).fetchall():
                 suffix = ("-applied" if kind == "partner-change" else "-expired") if expired else ""
-                batch = self.mail / (request_id + suffix)
-                if not batch.is_dir():
-                    with tempfile.TemporaryDirectory(dir=self.mail) as directory:
-                        draft = Path(directory) / "batch"
-                        draft.mkdir(mode=0o700)
-                        for role, message in db.execute("""
-                            SELECT role, message FROM decision_mail WHERE request_id = ? AND expired = ?
-                        """, (request_id, expired)):
-                            (draft / (role + ".eml")).write_bytes(message)
-                        draft.rename(batch)
+                publish_batch(self.mail / (request_id + suffix), db.execute("""
+                    SELECT role, message FROM decision_mail WHERE request_id = ? AND expired = ?
+                """, (request_id, expired)))
                 if not expired:
                     db.execute("UPDATE requests SET deadline = ? WHERE id = ? AND deadline IS NULL",
                                (self.clock() + LIFETIME, request_id))

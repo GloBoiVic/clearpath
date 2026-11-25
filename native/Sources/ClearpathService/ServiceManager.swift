@@ -16,7 +16,7 @@ public struct ServicePaths: Sendable {
     public var recovery: URL { supportDirectory.appendingPathComponent("recovery.json") }
     var internetRecovery: URL { supportDirectory.appendingPathComponent("internet-recovery.json") }
     var communityListStatus: URL { supportDirectory.appendingPathComponent("community-list.json") }
-    var removalConfig: URL { supportDirectory.appendingPathComponent("partner-service.json") }
+    var partnerConfig: URL { supportDirectory.appendingPathComponent("partner-service.json") }
     var siteRemovals: URL { supportDirectory.appendingPathComponent("site-removals.json") }
     public var daemonPlist: URL { root.appendingPathComponent("Library/LaunchDaemons/\(Self.label).plist") }
     var siteBlockPlist: URL { daemonPlist.deletingLastPathComponent().appendingPathComponent("\(Self.siteBlockLabel).plist") }
@@ -24,7 +24,7 @@ public struct ServicePaths: Sendable {
     /// Clearpath's files only, in removal order: the recovery record goes last.
     var owned: [URL] {
         [communityListPlist, siteBlockPlist, daemonPlist, filter, controlTool, policy, communityListStatus,
-         removalConfig, siteRemovals, internetRecovery, recovery]
+         partnerConfig, siteRemovals, internetRecovery, recovery]
     }
 }
 
@@ -107,7 +107,7 @@ public final class ServiceManager {
         let policyData = try readRegularFile(policy, what: "policy")
         let controlData = try controlTool.map { try readRegularFile($0, what: "service tool") }
         let configData = try partnerConfig.map { try readRegularFile($0, what: "pairing configuration") }
-        if let configData { _ = try decodeRemovalConfiguration(configData).client() }
+        if let configData { _ = try decodePairingConfiguration(configData).client() }
         do { _ = try Policy(data: policyData) } catch { throw ServiceError.refused("Policy rejected: \(error).") }
         guard upstreamPort > 0 else { throw ServiceError.refused("--upstream-port must be 1-65535.") }
         guard system.portIsFree(Self.listenPort) else {
@@ -141,7 +141,7 @@ public final class ServiceManager {
         try withServiceLock {
             guard !fm.fileExists(atPath: paths.daemonPlist.path), !fm.fileExists(atPath: paths.siteBlockPlist.path),
                   !fm.fileExists(atPath: paths.communityListPlist.path), !fm.fileExists(atPath: paths.communityListStatus.path),
-                  !fm.fileExists(atPath: paths.internetRecovery.path), !fm.fileExists(atPath: paths.removalConfig.path),
+                  !fm.fileExists(atPath: paths.internetRecovery.path), !fm.fileExists(atPath: paths.partnerConfig.path),
                   !fm.fileExists(atPath: paths.siteRemovals.path) else {
                 throw ServiceError.refused("An earlier Clearpath install is present. Run uninstall first.")
             }
@@ -153,7 +153,7 @@ public final class ServiceManager {
                 try writeFile(filterData, to: paths.filter, mode: 0o755)
                 if let controlData { try writeFile(controlData, to: paths.controlTool, mode: 0o755) }
                 try writeFile(policyData, to: paths.policy, mode: 0o644)
-                if let configData { try writeFile(configData, to: paths.removalConfig, mode: 0o600, exclusive: true) }
+                if let configData { try writeFile(configData, to: paths.partnerConfig, mode: 0o600, exclusive: true) }
                 try makeDirectory(paths.daemonPlist.deletingLastPathComponent())
                 try writeFile(try daemonPlist(upstream: upstream, upstreamPort: upstreamPort), to: paths.daemonPlist, mode: 0o644)
                 try check(system.run(.launchctl, ["bootstrap", "system", paths.daemonPlist.path]), "launchctl bootstrap")

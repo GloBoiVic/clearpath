@@ -18,6 +18,7 @@ import tempfile
 import time
 from urllib.parse import parse_qs, urlsplit
 
+from .check_ins import CheckIns
 from .decisions import COPY, LIFETIME, Decisions, TOKEN, digest, invitation, valid_domain, valid_id
 
 
@@ -131,6 +132,7 @@ class Pairing:
             """)
             db.commit()
         self.decisions = Decisions(self.connect, self.mail, clock)
+        self.check_ins = CheckIns(self.connect, self.mail, self.decisions.clock)
 
     def connect(self):
         return sqlite3.connect(self.database_uri + "?mode=rw", uri=True)
@@ -213,7 +215,10 @@ class Pairing:
                     revision = revision + 1
                 WHERE role = ? AND token_hash = ? AND expires_at > ?
             """, (role, digest(token), time.time()))
-            return updated.rowcount == 1
+            if updated.rowcount != 1:
+                return False
+            self.check_ins.partner_accepted(db)
+            return True
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -232,7 +237,8 @@ class Handler(BaseHTTPRequestHandler):
         data = body.encode("utf-8") if isinstance(body, str) else body
         self.send_response(status)
         self.send_header("Content-Type", content_type + "; charset=utf-8")
-        self.send_header("Content-Length", str(len(data)))
+        if status != HTTPStatus.NO_CONTENT:
+            self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -295,6 +301,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.trusted_host():
             self.respond(HTTPStatus.BAD_REQUEST)
+        elif self.path == "/check-in":
+            self.check_in()
         elif self.path in ("/partners", "/setup"):
             if not self.owner():
                 self.respond(HTTPStatus.UNAUTHORIZED)
@@ -337,6 +345,9 @@ class Handler(BaseHTTPRequestHandler):
         if not self.trusted_host():
             self.respond(HTTPStatus.BAD_REQUEST)
             return
+        if self.path == "/check-in":
+            self.check_in()
+            return
         if self.path == "/requests/site-removal":
             self.submit_removal()
             return
@@ -359,6 +370,29 @@ class Handler(BaseHTTPRequestHandler):
             self.submit_acceptance(role)
             return
         self.respond(HTTPStatus.NOT_FOUND)
+
+    def check_in(self):
+        if not self.owner():
+            self.respond(HTTPStatus.UNAUTHORIZED)
+            return
+        check_ins = self.server.pairing.check_ins
+        try:
+            if self.command == "GET":
+                revision = check_ins.revision()
+            else:
+                revision = self.json_form({"revision"})["revision"]
+                if not valid_id(revision):
+                    raise ValueError
+                check_ins.receive(revision)
+        except ValueError:
+            self.respond(HTTPStatus.BAD_REQUEST)
+        except (OSError, sqlite3.Error):
+            self.respond(HTTPStatus.SERVICE_UNAVAILABLE)
+        else:
+            if self.command == "GET":
+                self.respond(HTTPStatus.OK, json.dumps({"revision": revision}), "application/json")
+            else:
+                self.respond(HTTPStatus.NO_CONTENT)
 
     def submit_setup(self):
         if not self.owner():
@@ -504,6 +538,10 @@ class PairingServer(HTTPServer):
         """Resolve expired requests. Undelivered mail stays in the durable outbox for the next try."""
         try:
             self.pairing.decisions.advance(self.origin)
+        except OSError:
+            pass
+        try:
+            self.pairing.check_ins.advance()
         except OSError:
             pass
 

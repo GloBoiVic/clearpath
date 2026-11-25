@@ -178,6 +178,10 @@ The Swift suite exercises the production policy updater with a controllable cloc
 
 `swift test --package-path native --scratch-path artifacts/native-build --filter SiteRemovalTests` runs the policy writer against a temporary installation, the actual Python pairing service, synthetic mail and a running Swift filter with a loopback DNS upstream. The fixture clock tests approval, denial, request replay, restart recovery, both seven-day paths and preservation of adult exceptions through a community-list refresh. The Python suite also checks the decision preview and mail retry at the HTTP boundary. An HTTPS deployment, real email and any installation that changes Mac settings follow the project approval rules.
 
+### Missed check-ins through the loopback partner service
+
+`swift test --package-path native --scratch-path artifacts/native-build --filter PartnerCheckInTests` runs the Swift worker with the real Python service, a fixture clock and synthetic primary and backup partners. It observes scheduled check-ins with no menu-bar process, the first alert after 24 hours, duplicate suppression and a second alert after recovery. It reads the delivered messages in the private `mail/check-in-<revision>` directories. The Python tests also cover stale revisions, unauthorized and malformed updates, solo and pending setups, and a delivery retry across a service restart.
+
 ### Protection health and Restore internet in the VM
 
 Use the install procedure above with a loopback upstream and a synthetic original resolver. Keep any original fixture that binds port 53 stopped while the filter occupies that port. Before changing DNS, confirm the original fixture can resolve a fresh allowed name. Watch the menu bar while running the following checks:
