@@ -66,10 +66,13 @@ class RemovalRequests(unittest.TestCase):
         finally:
             connection.close()
 
+    def messages(self, request_id):
+        return [email.message_from_bytes(path.read_bytes())
+                for path in (self.state / "mail" / request_id).glob("*.eml")]
+
     def tokens(self, request_id):
-        messages = (self.state / "mail" / request_id).glob("*.eml")
         return {message["To"]: urlsplit(message.get_payload(decode=True).decode().strip().splitlines()[-1]).fragment
-                for path in messages for message in [email.message_from_bytes(path.read_bytes())]}
+                for message in self.messages(request_id)}
 
     def partners(self):
         for role in ("primary", "backup"):
@@ -99,6 +102,10 @@ class RemovalRequests(unittest.TestCase):
         self.assertEqual(self.status(request_id), "pending")
         tokens = self.tokens(request_id)
         self.assertEqual(set(tokens), {"primary@example.test", "backup@example.test"})
+        for message in self.messages(request_id):
+            content = message.get_payload(decode=True).decode()
+            self.assertIn("blocked.example", content)
+            self.assertIn("the domain and its subdomains", content)
         status, page = self.request("GET", "/decision")
         self.assertEqual(status, 200)
         self.assertIn('action="/decision/confirm"', page)

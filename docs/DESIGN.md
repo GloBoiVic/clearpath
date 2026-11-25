@@ -80,7 +80,7 @@ Setup, Block a site, Blocked sites and Partner settings open as their own window
 
 **Blocked sites** lists removal requests, the user's custom blocks, active adult list rules and any exceptions to the adult list. Each active rule can be selected for **Request removal**. Show **Requested** on a rule with a pending request. Show the selected rule, site and outcome in the request list. The panel's **Pending requests** count reflects requests that still need a decision or a policy update. Refresh the rules when the window opens and after a successful change.
 
-The email includes the requested site and the decision deadline. Opening its link displays a confirmation page with the site and **Approve** and **Deny** buttons. Selecting a button shows the result. A used, invalid or expired link shows **This request is no longer available.**
+The email includes the requested site and the decision deadline. Opening its link displays a confirmation page with the site and **Approve** and **Deny** buttons. Both explain that the selected rule covers the domain and its subdomains. Selecting a button shows the result. A used, invalid or expired link shows **This request is no longer available.**
 
 ### Setup
 

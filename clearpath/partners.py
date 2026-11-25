@@ -63,7 +63,8 @@ function showRequest() {
         })
         .then(({ domain }) => {
             if (current !== preview) return;
-            description.textContent = "Confirm your decision on the request to unblock " + domain + ".";
+            description.textContent = "Confirm your decision on the request to unblock " + domain +
+                ". The selected block covers the domain and its subdomains.";
             input.value = token;
             buttons.forEach(button => { button.disabled = false; });
         })

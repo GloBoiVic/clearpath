@@ -191,6 +191,7 @@ class Decisions:
         if link:
             message["Subject"] = "Clearpath site removal request"
             message.set_content(f"Clearpath received a request to unblock {domain}.\n"
+                                "The selected block covers the domain and its subdomains.\n"
                                 "Open the link to confirm your decision within seven days. "
                                 "If nobody responds, Clearpath will apply the request.\n\n"
                                 f"{link}", cte="8bit")
