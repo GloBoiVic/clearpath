@@ -72,7 +72,13 @@ flowchart LR
     Panel --> Uninstall
 ~~~
 
-Setup and Partner settings open as their own windows. Cmd-W closes them. Escape does nothing there and makes no sound, as in other Mac settings windows.
+Setup, Block a site, Blocked sites and Partner settings open as their own windows. Cmd-W closes them. Escape does nothing there and makes no sound, as in other Mac settings windows.
+
+### Site blocks
+
+**Block a site** opens a grouped form with a domain field and one-click shortcuts. Reddit, X and Tumblr appear under **Mixed sites**. Brave Search and Startpage appear under **Other search engines**. Each shortcut shows the domain it covers. Show the result of the addition beside the field and mark saved shortcuts as **Added**.
+
+**Blocked sites** lists the user's custom blocks, the adult list rules and any exceptions to the adult list. Refresh the rules when the window opens and after a successful addition.
 
 ### Setup
 

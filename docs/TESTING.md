@@ -16,6 +16,8 @@ The unit/integration suite uses local fixture servers, temporary policy files an
 
 `tests/test_swift_filter.py` builds the Swift `clearpath-filter` and runs it from a temp folder on a free loopback port against a loopback fixture upstream. It checks blocked apex and subdomains, forced Google/Bing/DuckDuckGo answers, allowed answers, HTTPS/SVCB, CNAME aliases, an unavailable safe target, silent, malformed and mismatched upstream replies, malformed client queries, TCP pipelining, IPv6, the loopback and port guards, startup refusal on a bad policy or upstream, and that no query name is logged. The Swift package tests cover the same engine in-process. This is deliberate evidence against overstating DNS-only protection.
 
+The site-block tests use a temporary installed-policy layout. The Swift service tests exercise the add-only XPC interface, peer authorization and the atomic write. The live loopback test uses the Python policy command to replace a fixture policy while the Swift filter is running, then verifies the new block, a nearby allowed name, retention of the last valid policy on a malformed update, and persistence after restarting the filter.
+
 Run the Swift command from the repo root. It uses the ignored `artifacts/` directory to avoid a Swift 6.4.2 crash when the compiler sees the same cache through both `/tmp` and `/private/tmp`.
 
 The last command type-checks every file in `app/` with the flags `build.sh` uses, so a broken menu-bar app fails Proof without building the bundle.

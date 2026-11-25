@@ -61,8 +61,10 @@ if let user = options["--user"] {
 }
 
 // Fail closed: an unreadable or invalid policy stops startup.
+let policyFile = URL(fileURLWithPath: policyPath)
+let initialVersion = PolicyVersion(file: policyFile)
 let policy: Policy
-do { policy = try Policy(data: Data(contentsOf: URL(fileURLWithPath: policyPath))) }
+do { policy = try Policy(file: policyFile.resolvingSymlinksInPath()) }
 catch { fail("Policy rejected: \(type(of: error)).\(error)", code: 1) }
 
 let server = LoopbackServer(resolver: Resolver(policy: policy), upstream: upstream, idleTimeout: idleTimeout)
@@ -87,6 +89,7 @@ for number in [SIGTERM, SIGINT] {
 }
 
 let shown = listen.contains(":") ? "[\(listen)]" : listen
+let policyWatcher = watchPolicy(policyFile, initialVersion: initialVersion, server: server)
 print("Clearpath filter on \(shown):\(actualPort); policy SHA256 \(policy.digest)")
 fflush(stdout)
 dispatchMain()

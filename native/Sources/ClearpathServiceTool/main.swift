@@ -9,11 +9,15 @@ usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--
        clearpath-service restore
        clearpath-service uninstall
        clearpath-service status
+       clearpath-service blocked-sites
+       clearpath-service block-site [DOMAIN]
        clearpath-service browser-profile
   install records every network service's DNS, starts the filter on 127.0.0.1:53 and points DNS at it.
   Without --upstream it follows the Mac's current default and supplemental DNS resolvers.
   restore returns DNS to its saved settings if the filter stays down, retaining the installation.
   uninstall restores the recorded DNS, then stops the filter and removes only Clearpath's files.
+  blocked-sites prints the installed block rules and their exceptions as JSON.
+  block-site adds a custom block through the installed local service. With no argument, it reads the domain from stdin.
   browser-profile writes Clearpath's removable Chrome and Firefox profile to standard output.
 
 """
@@ -67,6 +71,32 @@ case "status":
         encoder.dateEncodingStrategy = .iso8601
         print(String(decoding: try encoder.encode(manager.status()), as: UTF8.self))
     }
+case "blocked-sites":
+    guard arguments.isEmpty else { fail(usage, code: 2) }
+    run {
+        alarm(5)
+        try FileHandle.standardOutput.write(contentsOf: JSONEncoder().encode(manager.siteBlocks()))
+    }
+case "block-site":
+    guard arguments.count <= 1 else { fail(usage, code: 2) }
+    run {
+        let domain: String
+        if let argument = arguments.first {
+            domain = argument
+        } else {
+            alarm(2)
+            let data = try FileHandle.standardInput.read(upToCount: 1025)
+            alarm(0)
+            guard let data, let input = String(data: data, encoding: .utf8) else {
+                throw ServiceError.refused("Enter a domain such as example.com.")
+            }
+            domain = input
+        }
+        print(try SiteBlockControl.add(domain))
+    }
+case "serve-site-blocks":
+    guard arguments.isEmpty else { fail(usage, code: 2) }
+    run { try SiteBlockControl.serve(manager: manager) }
 case "browser-profile":
     guard arguments.isEmpty else { fail(usage, code: 2) }
     run {

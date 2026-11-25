@@ -43,6 +43,7 @@ final class SettingsWindow: NSWindow {
 @MainActor
 final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let health = ProtectionHealth()
+    private let siteBlocks = SiteBlockModel()
     private var statusItem: NSStatusItem!
     private var panel: MenuBarPanel!
     private var hosting: NSHostingView<Panel>!
@@ -58,6 +59,8 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
 
         hosting = NSHostingView(rootView: Panel(
             health: health,
+            openBlockSite: { [unowned self] in show("block-site", "Block a site", BlockSiteView(model: siteBlocks)) },
+            openBlockedSites: { [unowned self] in show("blocked-sites", "Blocked sites", BlockedSitesView(model: siteBlocks)) },
             openPartnerSettings: { [unowned self] in show("partner-settings", "Partner settings", PartnerSettings()) },
             openSetup: { [unowned self] in show("protection-setup", "Set up protection", ProtectionSetup()) }
         ))

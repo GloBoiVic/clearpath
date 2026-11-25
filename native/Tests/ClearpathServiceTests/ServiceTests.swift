@@ -28,6 +28,8 @@ final class FakeMac: SystemControl {
       nameserver[0] : 203.0.113.8
     """
     var loaded = false
+    var siteBlockJobLoaded = false
+    var siteBlockJobStarts = true
     var filterStarts = true
     var portFree = true
     var ignoreSetFor: String?
@@ -60,14 +62,26 @@ final class FakeMac: SystemControl {
         case (.scutil, _):
             return CommandResult(status: 0, output: resolverState)
         case (.launchctl, "bootstrap"):
+            if arguments[2].hasSuffix("/\(ServicePaths.siteBlockLabel).plist") {
+                guard siteBlockJobStarts else { return CommandResult(status: 1, output: "bootstrap failed") }
+                siteBlockJobLoaded = true
+                return CommandResult(status: 0, output: "")
+            }
             onBootstrap()
             loaded = true
             return CommandResult(status: 0, output: "")
         case (.launchctl, "bootout"):
+            if arguments[1] == "system/\(ServicePaths.siteBlockLabel)" {
+                siteBlockJobLoaded = false
+                return CommandResult(status: 0, output: "")
+            }
             guard loaded else { return CommandResult(status: 113, output: "Boot-out failed: 113: Could not find service") }
             loaded = false
             return CommandResult(status: 0, output: "")
         case (.launchctl, "print"):
+            if arguments[1] == "system/\(ServicePaths.siteBlockLabel)" {
+                return CommandResult(status: siteBlockJobLoaded ? 0 : 113, output: "")
+            }
             return loaded ? CommandResult(status: 0, output: "system/io.clearpath.filter = {\n\tstate = running\n\tpid = 4242\n}\n")
                           : CommandResult(status: 113, output: "Could not find service \"io.clearpath.filter\" in domain for system\n")
         default:
@@ -124,6 +138,7 @@ final class ServiceTests: XCTestCase {
     func assertNothingInstalled(file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(mac.dns, original, file: file, line: line)
         XCTAssertFalse(mac.loaded, file: file, line: line)
+        XCTAssertFalse(mac.siteBlockJobLoaded, file: file, line: line)
         for url in paths.owned { XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), url.path, file: file, line: line) }
     }
 
@@ -359,6 +374,74 @@ final class ServiceTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: paths.controlTool), contents)
         XCTAssertEqual(try mode(paths.controlTool), 0o755)
         XCTAssertEqual(try manager.status().restoreAvailable, true)
+        XCTAssertTrue(mac.siteBlockJobLoaded)
+        let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: paths.siteBlockPlist), format: nil) as? [String: Any]
+        XCTAssertEqual(plist?["MachServices"] as? [String: Bool], [ServicePaths.siteBlockLabel: true])
+        XCTAssertEqual(plist?["ProgramArguments"] as? [String], [paths.controlTool.path, "serve-site-blocks"])
+        try manager.uninstall()
+        assertNothingInstalled()
+    }
+
+    func test_site_additions_preserve_policy_and_survive_a_new_manager() throws {
+        try install()
+        let original = try JSONSerialization.jsonObject(with: Data(contentsOf: paths.policy)) as! [String: Any]
+        XCTAssertEqual(try manager.addSiteBlock("New.Example."), "new.example")
+        let updated = try Data(contentsOf: paths.policy)
+        XCTAssertEqual(try manager.addSiteBlock("new.example"), "new.example")
+        XCTAssertEqual(try Data(contentsOf: paths.policy), updated)
+        assertRefused({ _ = try manager.addSiteBlock("https://new.example") }, containing: "domain")
+        XCTAssertEqual(try Data(contentsOf: paths.policy), updated)
+        let restarted = ServiceManager(paths: paths, system: mac)
+        XCTAssertTrue(try restarted.siteBlocks().custom.contains("new.example"))
+        var object = try JSONSerialization.jsonObject(with: updated) as! [String: Any]
+        XCTAssertEqual((object.removeValue(forKey: "custom") as! [String]).sorted(),
+                       (original["custom"] as! [String] + ["new.example"]).sorted())
+        var otherOriginal = original
+        otherOriginal.removeValue(forKey: "custom")
+        XCTAssertEqual(object as NSDictionary, otherOriginal as NSDictionary)
+        XCTAssertEqual(try mode(paths.policy), 0o644)
+    }
+
+    func test_install_rolls_back_when_the_policy_writer_cannot_be_registered() throws {
+        mac.siteBlockJobStarts = false
+        XCTAssertThrowsError(try manager.install(filter: filter, policy: policy, upstream: "192.0.2.10",
+                                                 upstreamPort: 53, controlTool: filter))
+        assertNothingInstalled()
+        XCTAssertNil(mac.index(of: "/usr/sbin/networksetup -setdnsservers Wi-Fi 127.0.0.1"))
+    }
+
+    func test_site_addition_cannot_replace_an_invalid_policy_or_a_symbolic_link() throws {
+        try install()
+        let corrupt = Data("invalid JSON".utf8)
+        try corrupt.write(to: paths.policy)
+        assertRefused({ _ = try manager.addSiteBlock("new.example") }, containing: "invalid")
+        XCTAssertEqual(try Data(contentsOf: paths.policy), corrupt)
+        try FileManager.default.removeItem(at: paths.policy)
+        try FileManager.default.createSymbolicLink(at: paths.policy, withDestinationURL: policy)
+        let before = try Data(contentsOf: policy)
+        assertRefused({ _ = try manager.addSiteBlock("new.example") }, containing: "invalid")
+        XCTAssertEqual(try Data(contentsOf: policy), before)
+        XCTAssertTrue(manager.isSymlink(paths.policy))
+    }
+
+    func test_site_block_connection_checks_the_peer_and_only_adds_valid_domains() throws {
+        try install()
+        let authorized = SiteBlockControl(manager: manager) { geteuid() }
+        let denied = SiteBlockControl(manager: manager) { nil }
+        let listener = NSXPCListener.anonymous()
+        listener.resume()
+        defer { listener.invalidate() }
+        func add(_ input: String) throws -> String {
+            try SiteBlockControl.add(input, over: NSXPCConnection(listenerEndpoint: listener.endpoint))
+        }
+        listener.delegate = denied
+        XCTAssertThrowsError(try add("denied.example"))
+        listener.delegate = authorized
+        XCTAssertEqual(try add("Added.Example."), "added.example")
+        assertRefused({ _ = try add("added.example/path") }, containing: "domain")
+        let custom = try manager.siteBlocks().custom
+        XCTAssertTrue(custom.contains("added.example"))
+        XCTAssertFalse(custom.contains("denied.example"))
     }
 
     func test_restore_waits_for_restart_and_leaves_protection_on_if_the_filter_answers() throws {

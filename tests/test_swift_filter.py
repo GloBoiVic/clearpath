@@ -15,7 +15,9 @@ import signal
 import socket
 import struct
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 from dnslib import A, CNAME, RCODE, QTYPE, RD, RR, DNSRecord
@@ -157,6 +159,54 @@ class SwiftFilterProcess(unittest.TestCase):
         self.assertTrue(asked.isdisjoint(self.policy_data["safesearch"]), asked)
         self.assertTrue({"forcesafesearch.google.com", "strict.bing.com", "safe.duckduckgo.com"} <= asked)
         self.stop(proc)
+
+    def test_installed_policy_reload_blocks_without_restart_and_keeps_the_last_valid_policy(self):
+        support = self.tmp / "Library" / "Application Support" / "Clearpath"
+        support.mkdir(parents=True)
+        installed_policy = support / self.policy.name
+        self.policy.replace(installed_policy)
+        self.policy = installed_policy
+        domains = self.tmp / "domains.txt"
+
+        def import_domains(text):
+            domains.write_text(text)
+            return subprocess.run(
+                [sys.executable, "-m", "clearpath.policy", str(self.policy),
+                 "--import-list", str(domains), "--category", "custom"],
+                cwd=ROOT, capture_output=True, text=True, timeout=5,
+            )
+
+        proc, port = self.launch()
+        self.assertEqual(self.ask(port, "new-block.example").header.rcode, RCODE.NOERROR)
+        initial = self.policy.read_bytes()
+        result = import_domains("https://new-block.example\n")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.policy.read_bytes(), initial)
+        result = import_domains("\n".join(self.policy_data["custom"] + ["New-Block.Example."]))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        updated = self.policy.read_bytes()
+        deadline = time.monotonic() + 3
+        while self.ask(port, "new-block.example").header.rcode != RCODE.NXDOMAIN:
+            self.assertLess(time.monotonic(), deadline, "the running filter did not reload the installed policy")
+            time.sleep(0.05)
+
+        self.assertIsNone(proc.poll())
+        self.assertEqual(self.ask(port, "sub.new-block.example", tcp=True).header.rcode, RCODE.NXDOMAIN)
+        self.assertEqual(self.ask(port, "nearby-new-block.example").header.rcode, RCODE.NOERROR)
+        self.assertEqual(self.ask(port, "blocked.example").header.rcode, RCODE.NXDOMAIN)
+
+        self.policy.write_text("invalid policy")
+        ready, _, _ = select.select([proc.stderr], [], [], 3)
+        self.assertTrue(ready, "the running filter did not report the rejected policy")
+        self.assertIn("Policy reload rejected", proc.stderr.readline())
+        self.assertEqual(self.ask(port, "new-block.example").header.rcode, RCODE.NXDOMAIN)
+        self.policy.write_bytes(updated)
+        self.stop(proc)
+
+        restarted, port = self.launch()
+        self.assertEqual(self.ask(port, "new-block.example").header.rcode, RCODE.NXDOMAIN)
+        self.assertEqual(self.ask(port, "nearby-new-block.example").header.rcode, RCODE.NOERROR)
+        self.stop(restarted)
 
     def test_allowed_names_are_forwarded_for_a_aaaa_and_https(self):
         proc, port = self.launch()

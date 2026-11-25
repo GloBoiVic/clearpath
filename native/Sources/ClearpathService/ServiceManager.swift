@@ -5,6 +5,7 @@ import ClearpathCore
 /// Where Clearpath's own files live. `root` is `/` on a Mac and a temp folder in tests.
 public struct ServicePaths: Sendable {
     public static let label = "io.clearpath.filter"
+    static let siteBlockLabel = "io.clearpath.site-blocks"
     public let root: URL
     public init(root: URL = URL(fileURLWithPath: "/")) { self.root = root }
     public var supportDirectory: URL { root.appendingPathComponent("Library/Application Support/Clearpath") }
@@ -14,8 +15,9 @@ public struct ServicePaths: Sendable {
     public var recovery: URL { supportDirectory.appendingPathComponent("recovery.json") }
     var internetRecovery: URL { supportDirectory.appendingPathComponent("internet-recovery.json") }
     public var daemonPlist: URL { root.appendingPathComponent("Library/LaunchDaemons/\(Self.label).plist") }
+    var siteBlockPlist: URL { daemonPlist.deletingLastPathComponent().appendingPathComponent("\(Self.siteBlockLabel).plist") }
     /// Clearpath's files only, in removal order: the recovery record goes last.
-    var owned: [URL] { [daemonPlist, filter, controlTool, policy, internetRecovery, recovery] }
+    var owned: [URL] { [siteBlockPlist, daemonPlist, filter, controlTool, policy, internetRecovery, recovery] }
 }
 
 /// One network service's DNS setting. No servers means automatic (DHCP) DNS.
@@ -86,7 +88,8 @@ public final class ServiceManager {
     public func install(filter: URL, policy: URL, upstream: String?, upstreamPort: UInt16, controlTool: URL? = nil) throws {
         guard system.isRoot else { throw ServiceError.refused("Install must run as root (sudo).") }
         let fm = FileManager.default
-        guard !fm.fileExists(atPath: paths.recovery.path), !fm.fileExists(atPath: paths.daemonPlist.path) else {
+        guard !fm.fileExists(atPath: paths.recovery.path), !fm.fileExists(atPath: paths.daemonPlist.path),
+              !fm.fileExists(atPath: paths.siteBlockPlist.path) else {
             throw ServiceError.refused("Clearpath is already installed, or an earlier install stopped partway. Run uninstall first.")
         }
         let filterData = try readRegularFile(filter, what: "filter")
@@ -124,7 +127,8 @@ public final class ServiceManager {
                                     upstream: chosen, upstreamPort: upstreamPort, resolverState: resolver.output)
         try makeDirectory(paths.supportDirectory)
         try withServiceLock {
-            guard !fm.fileExists(atPath: paths.daemonPlist.path), !fm.fileExists(atPath: paths.internetRecovery.path) else {
+            guard !fm.fileExists(atPath: paths.daemonPlist.path), !fm.fileExists(atPath: paths.siteBlockPlist.path),
+                  !fm.fileExists(atPath: paths.internetRecovery.path) else {
                 throw ServiceError.refused("An earlier Clearpath install is present. Run uninstall first.")
             }
             try writeFile(try Self.encoder.encode(record), to: paths.recovery, mode: 0o644, exclusive: true)
@@ -140,6 +144,10 @@ public final class ServiceManager {
                 try check(system.run(.launchctl, ["bootstrap", "system", paths.daemonPlist.path]), "launchctl bootstrap")
                 guard waitForFilter() else {
                     throw ServiceError.failed("The filter did not answer on \(Self.listenAddress):\(Self.listenPort) within \(Int(Self.readyTimeout)) seconds.")
+                }
+                if controlData != nil {
+                    try writeFile(try siteBlockPlist(), to: paths.siteBlockPlist, mode: 0o644)
+                    try check(system.run(.launchctl, ["bootstrap", "system", paths.siteBlockPlist.path]), "launchctl bootstrap site-block service")
                 }
                 log("Filter answering on \(Self.listenAddress):\(Self.listenPort).")
                 for service in services {
@@ -174,10 +182,12 @@ public final class ServiceManager {
             // Without the record the original setting is unknown, and stopping the daemon would cut DNS.
             throw ServiceError.refused("The recovery record is missing and \(stuck.name) still uses \(Self.listenAddress). Set its DNS back by hand first (networksetup -setdnsservers \"\(stuck.name)\" Empty for automatic).")
         }
-        if daemonLoaded() {
-            let result = try system.run(.launchctl, ["bootout", "system/\(ServicePaths.label)"])
-            if result.status != 0 && daemonLoaded() { throw ServiceError.failed("launchctl bootout failed: \(result.output)") }
-            log("Stopped the filter service.")
+        for label in [ServicePaths.siteBlockLabel, ServicePaths.label] where daemonLoaded(label: label) {
+            let result = try system.run(.launchctl, ["bootout", "system/\(label)"])
+            if result.status != 0 && daemonLoaded(label: label) {
+                throw ServiceError.failed("launchctl bootout failed: \(result.output)")
+            }
+            log("Stopped \(label).")
         }
         for url in paths.owned where (try? url.checkResourceIsReachable()) == true || isSymlink(url) {
             do { try FileManager.default.removeItem(at: url) } catch { throw ServiceError.failed("Could not remove \(url.path): \(error)") }
@@ -327,6 +337,15 @@ public final class ServiceManager {
         return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
     }
 
+    private func siteBlockPlist() throws -> Data {
+        let plist: [String: Any] = [
+            "Label": ServicePaths.siteBlockLabel,
+            "ProgramArguments": [paths.controlTool.path, "serve-site-blocks"],
+            "MachServices": [ServicePaths.siteBlockLabel: true],
+        ]
+        return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+    }
+
     func waitForFilter() -> Bool {
         var waited = 0.0
         while waited < Self.readyTimeout {
@@ -336,8 +355,8 @@ public final class ServiceManager {
         return system.filterAnswers(port: Self.listenPort)
     }
 
-    func daemonLoaded() -> Bool {
-        (try? system.run(.launchctl, ["print", "system/\(ServicePaths.label)"]).status) == 0
+    func daemonLoaded(label: String = ServicePaths.label) -> Bool {
+        (try? system.run(.launchctl, ["print", "system/\(label)"]).status) == 0
     }
 
     func daemonPID() -> Int? {
