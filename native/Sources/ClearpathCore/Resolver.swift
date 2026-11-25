@@ -12,7 +12,11 @@ public extension DNSUpstream {
 
 public struct Resolver: Sendable {
     public let policy: Policy
-    public init(policy: Policy) { self.policy = policy }
+    private let onBlocked: @Sendable () -> Void
+    public init(policy: Policy, onBlocked: @escaping @Sendable () -> Void = {}) {
+        self.policy = policy
+        self.onBlocked = onBlocked
+    }
 
     public func resolve(_ packet: [UInt8], tcp: Bool, upstream: any DNSUpstream) async -> [UInt8] {
         guard let query = try? DNSMessage(packet) else { return DNSMessage.error(for: packet, code: 1) }
@@ -21,7 +25,9 @@ public struct Resolver: Sendable {
         do {
             let response: [UInt8]
             switch query.name.host.map(policy.decide) ?? .allow {
-            case .block: response = query.response(code: 3)
+            case .block:
+                onBlocked()
+                response = query.response(code: 3)
             case .safe(let target):
                 guard [1,28,5].contains(query.type) else { return query.response() }
                 var records = [DNSRecord(name: query.name, type: 5, cname: DNSName(target))]
@@ -53,7 +59,9 @@ public struct Resolver: Sendable {
                 for rr in result.answers where rr.type == 5 {
                     if let name = rr.cname?.host {
                         switch policy.decide(name) {
-                        case .block: return query.response(code: 3)
+                        case .block:
+                            onBlocked()
+                            return query.response(code: 3)
                         case .safe: return query.response(code: 2)
                         case .allow: break
                         }

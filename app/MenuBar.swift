@@ -44,12 +44,14 @@ final class SettingsWindow: NSWindow {
 final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let health = ProtectionHealth()
     private let siteBlocks = SiteBlockModel()
+    private let blockedLookupNotifications = BlockedLookupNotifications()
     private var statusItem: NSStatusItem!
     private var panel: MenuBarPanel!
     private var hosting: NSHostingView<Panel>!
     private var windows: [String: NSWindow] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        blockedLookupNotifications.start()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
             button.target = self

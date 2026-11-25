@@ -48,6 +48,14 @@ actor Fixture: DNSUpstream {
     }
 }
 
+private final class LockedValue<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+    init(_ value: Value) { stored = value }
+    func read() -> Value { lock.lock(); defer { lock.unlock() }; return stored }
+    func update(_ change: (inout Value) -> Void) { lock.lock(); defer { lock.unlock() }; change(&stored) }
+}
+
 final class PolicyTests: XCTestCase {
     func testSharedPythonCorpus() throws {
         let policy = try examplePolicy()
@@ -91,6 +99,17 @@ final class PolicyTests: XCTestCase {
 }
 
 final class ResolverTests: XCTestCase {
+    func testBlockedLookupsPublishOnlyForBlockedQueriesAndAliases() async throws {
+        let notices = LockedValue(0)
+        let resolver = Resolver(policy: try examplePolicy(), onBlocked: {
+            notices.update { $0 += 1 }
+        })
+        _ = await resolver.resolve(DNSMessage.query("adult.example", type: 1), tcp: false, upstream: Fixture())
+        _ = await resolver.resolve(DNSMessage.query("alias.example", type: 1), tcp: false, upstream: Fixture(.blockedAlias))
+        _ = await resolver.resolve(DNSMessage.query("allowed.example", type: 1), tcp: false, upstream: Fixture())
+        XCTAssertEqual(notices.read(), 2)
+    }
+
     func testBlockedDomainsNeverReachUpstream() async throws {
         let resolver = Resolver(policy: try examplePolicy()), fixture = Fixture()
         for host in ["adult.example", "sub.adult.example", "blocked.example", "pornhub.com"] {
@@ -194,6 +213,25 @@ final class ResolverTests: XCTestCase {
             XCTAssertEqual(result[3] & 15, 1)
         }
         let calls = await fixture.calls; XCTAssertTrue(calls.isEmpty)
+    }
+}
+
+final class BlockNoticeGateTests: XCTestCase {
+    func testSuppressesBurstsWithoutKeepingCounts() {
+        let clock = LockedValue(Date(timeIntervalSince1970: 100))
+        let publications = LockedValue(0)
+        let gate = BlockNoticeGate(minimumInterval: 30, now: {
+            clock.read()
+        }, publish: {
+            publications.update { $0 += 1 }
+        })
+        gate.blockedLookup()
+        gate.blockedLookup()
+        clock.update { $0.addTimeInterval(29) }
+        gate.blockedLookup()
+        clock.update { $0.addTimeInterval(1) }
+        gate.blockedLookup()
+        XCTAssertEqual(publications.read(), 2)
     }
 }
 

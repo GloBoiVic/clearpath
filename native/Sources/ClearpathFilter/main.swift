@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import Network
 import ClearpathCore
 import ClearpathNetwork
@@ -67,7 +68,14 @@ let policy: Policy
 do { policy = try Policy(file: policyFile.resolvingSymlinksInPath()) }
 catch { fail("Policy rejected: \(type(of: error)).\(error)", code: 1) }
 
-let server = LoopbackServer(resolver: Resolver(policy: policy), upstream: upstream, idleTimeout: idleTimeout)
+let blockedNotice = BlockNoticeGate {
+    // Darwin notifications carry no user info or domain, and are delivered only to a local observer.
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                         CFNotificationName("org.clearpath.blocked-lookup" as CFString),
+                                         nil, nil, true)
+}
+let server = LoopbackServer(policy: policy, upstream: upstream, idleTimeout: idleTimeout,
+                            onBlocked: { blockedNotice.blockedLookup() })
 let actualPort: UInt16
 do { actualPort = try server.start(host: listen, port: port) }
 catch { fail("Could not listen on \(listen):\(port).", code: 1) }

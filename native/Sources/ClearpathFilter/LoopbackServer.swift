@@ -14,16 +14,20 @@ final class LoopbackServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "io.clearpath.filter.server")
     private var resolver: Resolver
     private let upstream: any DNSUpstream
+    private let onBlocked: @Sendable () -> Void
     private var listeners: [NWListener] = []
     private var connections: [ObjectIdentifier: Client] = [:]
     private var inFlight = 0
 
-    init(resolver: Resolver, upstream: any DNSUpstream, idleTimeout: TimeInterval) {
-        self.resolver = resolver; self.upstream = upstream; self.idleTimeout = idleTimeout
+    init(policy: Policy, upstream: any DNSUpstream, idleTimeout: TimeInterval,
+         onBlocked: @escaping @Sendable () -> Void = {}) {
+        self.resolver = Resolver(policy: policy, onBlocked: onBlocked)
+        self.upstream = upstream; self.idleTimeout = idleTimeout
+        self.onBlocked = onBlocked
     }
 
     func updatePolicy(_ policy: Policy) {
-        queue.sync { resolver = Resolver(policy: policy) }
+        queue.sync { resolver = Resolver(policy: policy, onBlocked: onBlocked) }
     }
 
     /// Binds UDP then TCP on the same port. With port 0 the UDP port is picked by the
