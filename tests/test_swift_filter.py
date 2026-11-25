@@ -5,6 +5,7 @@ free high port, forwarding only to a loopback fixture upstream. Nothing here cha
 the Mac's DNS settings or sends a name to an external DNS server.
 """
 import contextlib
+import errno
 import hashlib
 import json
 import os
@@ -19,6 +20,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from dnslib import A, CNAME, RCODE, QTYPE, RD, RR, DNSRecord
 
@@ -28,6 +30,24 @@ from test_filter import Fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRATCH = ROOT / "artifacts" / "native-build"
+
+
+def reserve_udp_tcp_port():
+    """Return bound UDP and TCP sockets sharing a port, retrying bind collisions."""
+    while True:
+        stack = contextlib.ExitStack()
+        with stack:
+            udp = stack.enter_context(socket.socket(socket.AF_INET, socket.SOCK_DGRAM))
+            udp.bind(("127.0.0.1", 0))
+            tcp = stack.enter_context(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+            try:
+                tcp.bind(("127.0.0.1", udp.getsockname()[1]))
+            except OSError as error:
+                if error.errno != errno.EADDRINUSE:
+                    raise
+                continue
+            stack.pop_all()
+            return udp, tcp
 BLOCKED = ("adult.example", "sub.adult.example", "blocked.example", "sub.blocked.example")
 RECORD_TYPES = ("A", "AAAA", "HTTPS", "SVCB")
 
@@ -82,6 +102,51 @@ class LiveFixture(Fixture):
             out.add_answer(RR(name, query.q.qtype, rdata=RD(b"\x00\x01\x00")))  # priority 1, target "."
             return out.pack()
         return super().handle(packet, tcp)
+
+
+class PortReservationTests(unittest.TestCase):
+    def test_reserve_udp_tcp_port_retries_only_address_in_use(self):
+        class FakeSocket:
+            def __init__(self, port=53000, error=None):
+                self.port = port
+                self.error = error
+                self.closed = False
+
+            def bind(self, _address):
+                if self.error:
+                    raise self.error
+
+            def getsockname(self):
+                return ("127.0.0.1", self.port)
+
+            def close(self):
+                self.closed = True
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                self.close()
+
+        udp1, tcp1 = FakeSocket(), FakeSocket(error=OSError(errno.EADDRINUSE, "collision"))
+        udp2, tcp2 = FakeSocket(), FakeSocket()
+        with mock.patch("test_swift_filter.socket.socket", side_effect=[udp1, tcp1, udp2, tcp2]):
+            result = reserve_udp_tcp_port()
+        self.assertEqual(result, (udp2, tcp2))
+        self.assertTrue(udp1.closed)
+        self.assertTrue(tcp1.closed)
+
+    def test_reserve_udp_tcp_port_propagates_unexpected_bind_error(self):
+        unexpected = OSError(errno.EACCES, "permission denied")
+        udp, tcp = mock.MagicMock(), mock.MagicMock()
+        udp.__enter__.return_value = udp
+        tcp.__enter__.return_value = tcp
+        tcp.bind.side_effect = unexpected
+        with mock.patch("test_swift_filter.socket.socket", side_effect=[udp, tcp]):
+            with self.assertRaisesRegex(OSError, "permission denied"):
+                reserve_udp_tcp_port()
+        udp.__exit__.assert_called_once()
+        tcp.__exit__.assert_called_once()
 
 
 class SwiftFilterProcess(unittest.TestCase):
@@ -272,9 +337,8 @@ class SwiftFilterProcess(unittest.TestCase):
 
     def test_slow_answers_outlive_the_idle_timeout_and_idle_connections_close(self):
         # A slow upstream on both transports: UDP never replies; TCP accepts and never replies.
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent, socket.socket(socket.AF_INET, socket.SOCK_STREAM) as stalled:
-            silent.bind(("127.0.0.1", 0))
-            stalled.bind(("127.0.0.1", silent.getsockname()[1]))
+        silent, stalled = reserve_udp_tcp_port()
+        with silent, stalled:
             stalled.listen(8)
             proc, port = self.launch("--timeout", "1", "--idle-timeout", "0.3", upstream_port=silent.getsockname()[1])
             self.assertEqual(self.ask(port, "github.com", "A").header.rcode, RCODE.SERVFAIL)
