@@ -47,8 +47,8 @@ V1 runs on Victor's Mac only. He keeps his admin account. The diagram is `docs/a
 
 **Leaving**
 - Uninstall with approval: request it, then a partner approves or 7 days pass.
-- Uninstall right now: type a sentence such as "I understand my partner will be notified", wait out a 60-second countdown, enter the Mac password. The partner is told it happened without approval.
-- Every uninstall route removes Clearpath completely: it restores the Mac's DNS setting and removes the background service and the browser profile, so a sold Mac or a missing partner never leaves a half-broken machine.
+- Uninstall right now: open **Leave Clearpath** from the shield menu, type **I understand my partner will be notified**, wait 60 seconds, and approve the macOS administrator prompt. This works offline. With a configured pairing service, Clearpath saves an uninstall-without-approval event for delivery in #22. An accepted partner who never receives the event still gets the missed-check-in alert after 24 hours.
+- Both uninstall routes use the same cleanup. Clearpath verifies the previous DNS settings before stopping the filter. It removes its background services, support files, login item, browser profile and app. If macOS requires manual profile removal, Clearpath guides the user through Device Management and verifies removal on retry.
 
 **Failure.** If the filter crashes, internet lookups stop until it restarts on its own, within seconds. If it stays down, the menu bar shows the problem and a "Restore internet" button; using it alerts the partner. A crash never silently leaves the user unprotected, and never leaves them stuck offline.
 
@@ -129,5 +129,7 @@ Free and open source (MIT). No paid Apple Developer Program for now (Victor, 202
 | An accepted partner can be replaced, not removed without a replacement, for now ([#49](https://github.com/GloBoiVic/clearpath/issues/49)) | Victor accepted the recommendation, 2026-11-25 | Keeps the change to what #18 asked |
 | Install Clearpath from the setup window | Victor, 2026-11-25 | The app moves to Applications, opens at login, and asks for the Mac password once. |
 | Run the trial without a partner | Victor, 2026-11-25 | The trial setup can finish without a configured partner service. |
+| Ship Uninstall now for the trial | Victor, 2026-11-25 | “Build 'Uninstall now' as your way out. Everything gets removed: the app, the filter, and the browser settings. The partner-approved uninstall comes later.” |
+| Allow clean uninstall and use the missed-check-in alert | Victor accepted the recommendation, 2026-11-21 | The service sends a specific uninstall email when it receives an event. The 24-hour alert covers a missed event. |
 
 Approved by Victor on 2026-11-21.

@@ -2,7 +2,8 @@ import Foundation
 
 /// Managed browser DNS settings and Chrome's Google SafeSearch policy.
 public enum BrowserProfile {
-    private static let identifier = "io.clearpath.browser-policy.v1"
+    static let identifier = "io.clearpath.browser-policy.v1"
+    static let uuid = "B68A3543-1786-5EE8-9951-19B494DC4CB2"
     private static let name = "Clearpath Browser Policies"
 
     public static func configuration() throws -> Data {
@@ -31,7 +32,7 @@ public enum BrowserProfile {
         let profile: [String: Any] = [
             "PayloadType": "Configuration",
             "PayloadIdentifier": identifier,
-            "PayloadUUID": "B68A3543-1786-5EE8-9951-19B494DC4CB2",
+            "PayloadUUID": uuid,
             "PayloadVersion": 1,
             "PayloadDisplayName": name,
             "PayloadOrganization": "Clearpath",
@@ -41,6 +42,36 @@ public enum BrowserProfile {
             "PayloadContent": preferences
         ]
         return try PropertyListSerialization.data(fromPropertyList: profile, format: .xml, options: 0)
+    }
+
+    static func isInstalled(using system: SystemControl) throws -> Bool {
+        let listing = try system.run(.profiles, ["show", "-type", "configuration", "-output", "stdout-xml"])
+        let output = listing.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        if listing.status == 0, output == "There are no configuration profiles installed in the system domain" {
+            return false
+        }
+        let failure = ServiceError.failed("Clearpath couldn’t verify the installed browser profile. Try again.")
+        guard listing.status == 0,
+              let document = try? PropertyListSerialization.propertyList(from: Data(output.utf8), format: nil) as? [String: Any] else {
+            throw failure
+        }
+        if document.isEmpty { return false }
+        guard document.count == 1,
+              let profiles = (document["_computerlevel"] ?? document["_computerLevel"]) as? [[String: Any]] else {
+            throw failure
+        }
+        var matchingUUID: UUID?
+        for profile in profiles {
+            guard let installedID = profile["ProfileIdentifier"] as? String else { throw failure }
+            if installedID == identifier {
+                guard matchingUUID == nil, let installedUUID = profile["ProfileUUID"] as? String,
+                      let parsed = UUID(uuidString: installedUUID) else {
+                    throw failure
+                }
+                matchingUUID = parsed
+            }
+        }
+        return matchingUUID?.uuidString == uuid
     }
 
     private static func preferencesPayload(

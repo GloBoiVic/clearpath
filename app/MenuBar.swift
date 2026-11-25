@@ -65,7 +65,8 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
             openBlockSite: { [unowned self] in show("block-site", "Block a site", BlockSiteView(model: siteBlocks)) },
             openBlockedSites: { [unowned self] in show("blocked-sites", "Blocked sites", BlockedSitesView(model: siteBlocks)) },
             openPartnerSettings: { [unowned self] in show("partner-settings", "Partner settings", PartnerSettings()) },
-            openSetup: { [unowned self] in showSetup() }
+            openSetup: { [unowned self] in showSetup() },
+            openUninstall: { [unowned self] in show("uninstall", "Leave Clearpath", UninstallView()) }
         ))
         let background = NSVisualEffectView()
         background.material = .popover
@@ -172,6 +173,9 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
 @MainActor
 enum ClearpathMain {
     static func main() {
+        if Array(CommandLine.arguments.dropFirst()) == [UninstallLoginItem.argument] {
+            exit(UninstallLoginItem.run())
+        }
         let app = NSApplication.shared
         let controller = MenuBarController()
         app.delegate = controller

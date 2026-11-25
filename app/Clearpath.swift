@@ -8,6 +8,7 @@ struct Panel: View {
     let openBlockedSites: () -> Void
     let openPartnerSettings: () -> Void
     let openSetup: () -> Void
+    let openUninstall: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -53,6 +54,9 @@ struct Panel: View {
             destination("Blocked sites", icon: "globe", action: openBlockedSites)
             destination("Partner settings", icon: "person.crop.circle", action: openPartnerSettings)
             destination("Set up protection", icon: "gearshape", action: openSetup)
+            if SetupInstaller.runningFromApplications {
+                destination("Leave Clearpath", icon: "rectangle.portrait.and.arrow.right", action: openUninstall)
+            }
         }
         .padding(16)
         .frame(width: 320)
