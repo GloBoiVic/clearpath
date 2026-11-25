@@ -46,6 +46,28 @@ func run(_ body: () throws -> Void) -> Never {
 
 switch command {
 case "install":
+    if arguments == ["--from-setup", "copy"] || arguments == ["--from-setup", "in-place"] {
+        run {
+            guard let executable = Bundle.main.executableURL else {
+                throw ServiceError.refused("Could not locate the bundled service executable.")
+            }
+            let bundle = executable.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            let destination = "/Applications/Clearpath.app"
+            let copyApp = arguments.last == "copy"
+            var info = stat()
+            guard copyApp ? (lstat(destination, &info) == -1 && errno == ENOENT)
+                          : (lstat(destination, &info) == 0 && info.st_mode & S_IFMT == S_IFDIR) else {
+                throw ServiceError.refused("Clearpath’s Applications location changed. DNS was not changed.")
+            }
+            try manager.installFromSetup(filter: executable.deletingLastPathComponent().appendingPathComponent("clearpath-filter"),
+                                         policy: bundle.appendingPathComponent("Contents/Resources/default-policy.json"),
+                                         controlTool: executable) {
+                guard !copyApp || renamex_np(bundle.path, destination, UInt32(RENAME_EXCL)) == 0 else {
+                    throw ServiceError.failed("Could not move Clearpath into Applications.")
+                }
+            }
+        }
+    }
     var options: [String: String] = ["--upstream-port": "53"]
     while let flag = arguments.first {
         arguments.removeFirst()

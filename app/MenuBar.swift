@@ -65,7 +65,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
             openBlockSite: { [unowned self] in show("block-site", "Block a site", BlockSiteView(model: siteBlocks)) },
             openBlockedSites: { [unowned self] in show("blocked-sites", "Blocked sites", BlockedSitesView(model: siteBlocks)) },
             openPartnerSettings: { [unowned self] in show("partner-settings", "Partner settings", PartnerSettings()) },
-            openSetup: { [unowned self] in show("protection-setup", "Set up protection", ProtectionSetup()) }
+            openSetup: { [unowned self] in showSetup() }
         ))
         let background = NSVisualEffectView()
         background.material = .popover
@@ -102,6 +102,13 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
                 try? await Task.sleep(for: .seconds(2))
             }
         }
+        if !SetupInstaller.runningFromApplications || ProcessInfo.processInfo.arguments.contains(SetupInstaller.continuation) {
+            showSetup()
+        }
+    }
+
+    private func showSetup() {
+        show("protection-setup", "Set up protection", ProtectionSetup())
     }
 
     @objc private func togglePanel() {

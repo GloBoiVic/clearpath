@@ -7,6 +7,11 @@ struct FilterStatus: Decodable, Sendable {
         case restoring, restored, unknown
     }
 
+    struct CommunityList: Decodable, Sendable {
+        let lastSuccess: Date
+        let sourceVersion: String
+    }
+
     let installed: Bool
     let daemonLoaded: Bool
     let pid: Int?
@@ -15,6 +20,8 @@ struct FilterStatus: Decodable, Sendable {
     let defaultResolverUsesFilter: Bool?
     let recovery: Recovery?
     let restoreAvailable: Bool?
+    let setupInstallAvailable: Bool?
+    let communityList: CommunityList?
 
     var protected: Bool {
         installed && daemonLoaded && pid != nil && answering && dnsPointsToFilter
@@ -22,12 +29,13 @@ struct FilterStatus: Decodable, Sendable {
     }
 
     var message: String {
-        if protected { return "The filter is answering and the Mac’s DNS settings point to Clearpath." }
+        if protected && communityList != nil { return "Protection is on. The community blocklist is active." }
+        if protected { return "DNS filtering is on. The community blocklist has not been verified." }
         if recovery == .restored { return "DNS was restored to its previous settings." }
-        if !installed && !daemonLoaded && !answering && !dnsPointsToFilter {
+        if setupInstallAvailable == true {
             return "The Clearpath filter service is not installed."
         }
-        return "The Clearpath DNS path could not be verified. Check the service and DNS settings in Terminal."
+        return "Clearpath couldn’t verify the DNS configuration. Check DNS status before continuing."
     }
 
     static func read() -> FilterStatus? {
@@ -44,7 +52,9 @@ struct FilterStatus: Decodable, Sendable {
             let data = output.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
             guard process.terminationStatus == 0 else { return nil }
-            return try JSONDecoder().decode(Self.self, from: data)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode(Self.self, from: data)
         } catch {
             return nil
         }

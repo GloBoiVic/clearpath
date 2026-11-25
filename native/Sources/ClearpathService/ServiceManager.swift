@@ -62,6 +62,7 @@ public struct ServiceStatus: Codable, Equatable, Sendable {
     public internal(set) var restoreAvailable: Bool? = nil
     public internal(set) var defaultResolverUsesFilter: Bool? = nil
     public internal(set) var communityList: CommunityListStatus? = nil
+    public internal(set) var setupInstallAvailable: Bool? = nil
 }
 
 public enum ServiceError: Error, Equatable, CustomStringConvertible {
@@ -96,6 +97,18 @@ public final class ServiceManager {
 
     public func install(filter: URL, policy: URL, upstream: String?, upstreamPort: UInt16,
                         controlTool: URL? = nil, partnerConfig: URL? = nil) throws {
+        try install(filter: filter, policy: policy, upstream: upstream, upstreamPort: upstreamPort,
+                    controlTool: controlTool, partnerConfig: partnerConfig, communitySource: nil, finish: {})
+    }
+
+    public func installFromSetup(filter: URL, policy: URL, controlTool: URL, publishApp: () throws -> Void) throws {
+        try install(filter: filter, policy: policy, upstream: nil, upstreamPort: 53, controlTool: controlTool,
+                    partnerConfig: nil, communitySource: .hagezi, finish: publishApp)
+    }
+
+    func install(filter: URL, policy: URL, upstream: String?, upstreamPort: UInt16,
+                 controlTool: URL?, partnerConfig: URL? = nil, communitySource: CommunityListSource?,
+                 finish: () throws -> Void) throws {
         guard system.isRoot else { throw ServiceError.refused("Install must run as root (sudo).") }
         let fm = FileManager.default
         guard !fm.fileExists(atPath: paths.recovery.path), !fm.fileExists(atPath: paths.daemonPlist.path),
@@ -104,11 +117,29 @@ public final class ServiceManager {
         }
         let filterData = try readRegularFile(filter, what: "filter")
         guard fm.isExecutableFile(atPath: filter.path) else { throw ServiceError.refused("The filter at \(filter.path) is not executable.") }
-        let policyData = try readRegularFile(policy, what: "policy")
+        var policyData = try readRegularFile(policy, what: "policy")
         let controlData = try controlTool.map { try readRegularFile($0, what: "service tool") }
         let configData = try partnerConfig.map { try readRegularFile($0, what: "pairing configuration") }
         if let configData { _ = try decodePairingConfiguration(configData).client() }
-        do { _ = try Policy(data: policyData) } catch { throw ServiceError.refused("Policy rejected: \(error).") }
+        let basePolicy: Policy
+        do { basePolicy = try Policy(data: policyData) } catch { throw ServiceError.refused("Policy rejected: \(error).") }
+        let initialList: CommunityListStatus?
+        if let source = communitySource {
+            guard try status().setupInstallAvailable == true else {
+                throw ServiceError.refused("Clearpath cannot verify that this Mac is ready to install. DNS was not changed.")
+            }
+            let staged = try source.fetch()
+            let adult = try source.checkedDomains(staged.domains, previous: basePolicy)
+            guard var fields = try JSONSerialization.jsonObject(with: policyData) as? [String: Any] else {
+                throw ServiceError.refused("The default policy is not a JSON object.")
+            }
+            fields["adult"] = adult.sorted()
+            policyData = try JSONSerialization.data(withJSONObject: fields, options: [.prettyPrinted, .sortedKeys])
+            _ = try Policy(data: policyData)
+            initialList = CommunityListStatus(lastSuccess: Date(), sourceVersion: staged.version)
+        } else {
+            initialList = nil
+        }
         guard upstreamPort > 0 else { throw ServiceError.refused("--upstream-port must be 1-65535.") }
         guard system.portIsFree(Self.listenPort) else {
             throw ServiceError.refused("Something already listens on \(Self.listenAddress):\(Self.listenPort).")
@@ -139,6 +170,9 @@ public final class ServiceManager {
                                     upstream: chosen, upstreamPort: upstreamPort, resolverState: resolver.output)
         try makeDirectory(paths.supportDirectory)
         try withServiceLock {
+            if initialList != nil, try status().setupInstallAvailable != true {
+                throw ServiceError.refused("The DNS configuration changed during setup. DNS was not changed.")
+            }
             guard !fm.fileExists(atPath: paths.daemonPlist.path), !fm.fileExists(atPath: paths.siteBlockPlist.path),
                   !fm.fileExists(atPath: paths.communityListPlist.path), !fm.fileExists(atPath: paths.communityListStatus.path),
                   !fm.fileExists(atPath: paths.internetRecovery.path), !fm.fileExists(atPath: paths.partnerConfig.path),
@@ -153,6 +187,9 @@ public final class ServiceManager {
                 try writeFile(filterData, to: paths.filter, mode: 0o755)
                 if let controlData { try writeFile(controlData, to: paths.controlTool, mode: 0o755) }
                 try writeFile(policyData, to: paths.policy, mode: 0o644)
+                if let initialList {
+                    try writeFile(try Self.encoder.encode(initialList), to: paths.communityListStatus, mode: 0o644)
+                }
                 if let configData { try writeFile(configData, to: paths.partnerConfig, mode: 0o600, exclusive: true) }
                 try makeDirectory(paths.daemonPlist.deletingLastPathComponent())
                 try writeFile(try daemonPlist(upstream: upstream, upstreamPort: upstreamPort), to: paths.daemonPlist, mode: 0o644)
@@ -166,12 +203,15 @@ public final class ServiceManager {
                 }
                 log("Filter answering on \(Self.listenAddress):\(Self.listenPort).")
                 for service in services {
+                    if initialList != nil { _ = try recoveryLocation(record) }
                     try setDNS(service.name, to: [Self.listenAddress])
                 }
                 if controlData != nil {
                     try writeFile(try communityListPlist(), to: paths.communityListPlist, mode: 0o644)
                     try check(system.run(.launchctl, ["bootstrap", "system", paths.communityListPlist.path]), "launchctl bootstrap community-list job")
                 }
+                if initialList != nil { try verifySetupDNS(record) }
+                try finish()
                 log("DNS for every network service now points at the filter.")
             } catch {
                 log("Install failed: \(error) Rolling back.")
@@ -227,6 +267,9 @@ public final class ServiceManager {
                              dnsPointsToFilter: !services.isEmpty && services.allSatisfy { $0.servers == [Self.listenAddress] },
                              services: services)
         if status.installed {
+            guard !isSymlink(paths.recovery), try readRecord() != nil else {
+                throw ServiceError.failed("Could not verify the recorded DNS settings.")
+            }
             status.restoreAvailable = FileManager.default.isExecutableFile(atPath: paths.controlTool.path)
             status.communityList = try? readCommunityListStatus()
             try applyRecoveryStatus(to: &status)
@@ -236,7 +279,39 @@ public final class ServiceManager {
                 status.defaultResolverUsesFilter = Self.primaryNameservers(in: resolver.output) == [Self.listenAddress]
             }
         }
+        status.setupInstallAvailable = try setupInstallAvailable(status)
         return status
+    }
+
+    private func setupInstallAvailable(_ status: ServiceStatus) throws -> Bool {
+        guard !status.installed, !status.daemonLoaded, !status.answering, !status.services.isEmpty,
+              !status.services.contains(where: { $0.servers.contains(Self.listenAddress) }),
+              !isSymlink(paths.supportDirectory),
+              paths.owned.allSatisfy({ url in
+                  var info = stat()
+                  return lstat(url.path, &info) == -1 && errno == ENOENT
+              }) else { return false }
+        for label in [ServicePaths.label, ServicePaths.siteBlockLabel, ServicePaths.communityListLabel] {
+            // launchctl returns ESRCH's service-domain counterpart (113) for a missing job.
+            guard try system.run(.launchctl, ["print", "system/\(label)"]).status == 113 else { return false }
+        }
+        let resolver = try system.run(.scutil, ["--dns"])
+        return resolver.status == 0 && Self.primaryNameserver(in: resolver.output) != nil
+            && !Self.primaryNameservers(in: resolver.output).contains(Self.listenAddress)
+    }
+
+    private func verifySetupDNS(_ record: RecoveryRecord) throws {
+        // System Configuration can publish its new resolver a moment after networksetup returns.
+        for _ in 0..<20 {
+            _ = try recoveryLocation(record)
+            let current = try status()
+            if current.daemonLoaded, current.pid != nil, current.answering, current.dnsPointsToFilter,
+               current.defaultResolverUsesFilter == true, current.recovery == nil, current.communityList != nil {
+                return
+            }
+            system.pause(seconds: 0.25)
+        }
+        throw ServiceError.failed("Could not verify the Clearpath DNS path and community blocklist.")
     }
 
     // MARK: DNS settings
