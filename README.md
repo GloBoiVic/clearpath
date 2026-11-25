@@ -18,6 +18,8 @@ CLEARPATH_PARTNER_STATE="$partner_demo_dir" artifacts/Clearpath.app/Contents/Mac
 
 Open the shield menu and choose **Partner settings**. Invite synthetic addresses ending in `@example.test`. The service delivers messages as private `.eml` files under `$partner_demo_dir/mail`. View the message as text and paste the complete invitation link into a browser. Choose **Accept invitation**, then choose **Refresh** in Partner settings. Opening the link alone leaves the invitation pending. You can replace an unaccepted invite, which immediately invalidates the previous link. Invitations expire after seven days.
 
+**Set up protection** has the same partner rows and **Finish setup**. With no partner, check the acknowledgement first. To replace an accepted partner, enter the new address and choose **Request change**. The partner-change emails land in a folder under `mail`; open the link from either email and choose **Approve** or **Deny**. Approval sends the new partner an invitation and the replaced partner a notice in `mail/<id>-applied`.
+
 The service binds only to `127.0.0.1`. The default port is 8765. To use another port, pass `--port` to the service and set `CLEARPATH_PARTNER_PORT` to the same value when launching the app. Run the service and app as the same local user. The state directory contains the app's owner credential, one pairing database and the mail sink. Keep the entire directory private, including the invitation links in the mail sink. To stop the service after quitting the app, run `kill "$partner_demo_pid"`.
 
 This slice uses a local file sink with synthetic addresses. Remote deployment and real email delivery are pending.

@@ -31,6 +31,12 @@ The deadline is seven elapsed days from publishing the request batch, or from su
 
 The installed service journals the confirmed authorization before editing policy. Reconciliation can then retry a validated atomic write and keep the other rules intact. Custom removal deletes the matching custom entry. Adult list removal adds an exception for the selected domain and its subdomains, and later source refreshes preserve it. An independent custom or parent rule may still cover the name. Re-adding a custom block retires any in-flight authorization for the removed instance before writing the new rule.
 
+### Setup and partner changes
+
+The pairing service records setup completion once, in its own table, with whether the user finished alone. Finishing alone is accepted only when no partner is invited or accepted, and finishing with a partner only when one is. Removals already go through the decision flow, so the lock applies from the first moment. Unaccepted invitations stay freely correctable at any time.
+
+Replacing an accepted partner is a request of kind `partner-change` in the same `requests` table, with its role, revision and both addresses in `partner_changes`. It goes to every accepted partner, which means the one being replaced and the other partner if there is one, under the same tokens, first-response rule and seven-day deadline. One change can be open at a time. Approval or the deadline applies it in the deciding transaction: the slot gets the new address as a fresh pending invitation, and the replaced partner's links and queued request mail for every open request are withdrawn. A request left without a queued link starts its seven days then. The outbox publishes the new invitation and the notice to the replaced partner, plus a notice to the other partner after a timeout, as one `<id>-applied` batch. Requests saved before this change are migrated as site removals.
+
 ### Community list refresh
 
 The system job `io.clearpath.community-list` runs `clearpath-service refresh-community-list` when loaded and at the top of each hour. macOS coalesces missed calendar events into one run on wake. The command checks the last successful refresh on disk and downloads on the first run, after seven elapsed days, or after boot or wake if overdue. A failed check stays due. Uninstall removes the job and its state.

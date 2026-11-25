@@ -84,11 +84,15 @@ The email includes the requested site and the decision deadline. Opening its lin
 
 ### Setup
 
-Use native grouped sections for **DNS filter**, **Safari**, and **Chrome and Firefox**. **Check DNS status** reports the result of the most recent check. Explain the Private Relay setting, reveal the browser profile in Finder, and specify how to check its effective settings in each browser.
+Use native grouped sections for **DNS filter**, **Safari**, **Chrome and Firefox**, and **Partners**. **Check DNS status** reports the result of the most recent check. Explain the Private Relay setting, reveal the browser profile in Finder, and specify how to check its effective settings in each browser.
+
+**Partners** repeats the Partner settings rows for each role, then **A backup partner is strongly recommended.** and the solo warning: **Without a partner, nobody is told when you remove a block or undo Clearpath. You can undo Clearpath without anyone knowing.** With no invited or accepted partner, **Finish setup** stays disabled until the user checks **I understand I can undo Clearpath without anyone knowing**. Finishing is recorded once. Afterwards the section shows **Setup complete. Removing a block or changing an accepted partner now needs partner approval or a 7-day wait.**
 
 ### Partner settings
 
-Use native grouped sections for **Primary partner** and **Backup partner**, with a labeled email input and an invitation status. Show **A backup partner is strongly recommended.** in the backup section. The backup is optional. Use **Send invitation** for an empty slot and **Replace invitation** for an unaccepted invite. Accepted slots show their status and address. Use **Refresh** to check for acceptance.
+Use native grouped sections for **Primary partner** and **Backup partner**, with a labeled email input and an invitation status. Show **A backup partner is strongly recommended.** in the backup section. The backup is optional. Use **Send invitation** for an empty slot and **Replace invitation** for an unaccepted invite. Accepted slots show their status and address, a **New partner email** input, **Request change**, and **Changing an accepted partner needs approval from the other partner or the one being replaced, or 7 days with no answer. The replaced partner is told.** A pending request shows **Change requested** with the new address and hides the input; a denied one shows **Change denied** until the next request. Use **Refresh** to check for acceptance and decisions.
+
+A partner change email names the role and both addresses. Its link opens **Review partner change** with **Approve** and **Deny**, under the same rules as a site removal page.
 
 The email and acceptance page identify the invited role. The partner selects **Accept invitation** without an account. The result is **Invitation accepted** or **This invitation is no longer available.** The approved copy is maintained in `clearpath/partner-copy.json`.
 
@@ -105,6 +109,7 @@ Menu-bar panel. SwiftUI screen in `app/Clearpath.swift`. Approved by Victor on 2
 | Control Center and System Settings references, comfortable density | Victor accepted the recommendation | Protection, partner status and the primary action are visible at a glance |
 | System appearance and accent | Victor accepted the recommendation | Respects the Mac’s preferences |
 | Initial dimensions and reference colors | Agent | Gives the first SwiftUI panel measurable starting values |
+| Setup Partners section, solo warning and acknowledgement, partner change controls, and partner-change email copy, as written above and in `clearpath/partner-copy.json` | Victor approved as drafted on 2026-11-25 | Finishes setup with or without a partner and changes an accepted partner through approval |
 | Panel opens below the menu bar, extending right from the shield, and flips left near the screen edge | Victor chose on 2026-11-22 | Opens beside the shield rather than straight down, without covering the menu bar |
 | Settings windows close with Cmd-W, not Escape, and Escape is silent | Victor decided on 2026-11-22 | Follows the Mac convention and avoids losing a half-typed partner email |
 

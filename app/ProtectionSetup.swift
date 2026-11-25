@@ -39,6 +39,7 @@ struct ProtectionSetup: View {
                 Text("To undo this step, remove only Clearpath Browser Policies in Device Management, then restart the browsers.")
                     .foregroundStyle(.secondary)
             }
+            SetupPartners()
         }
         .formStyle(.grouped)
         .frame(width: 520)
