@@ -403,10 +403,16 @@ class SwiftServiceCommandTests(unittest.TestCase):
             self.assertEqual(sorted(os.listdir(tmp)), ["clearpath-filter", "policy.json"])
 
     def test_bad_usage_exits_2(self):
-        for command in ([], ["install"], ["install", "--policy"], ["uninstall", "now"], ["status", "x"], ["start"]):
+        for command in ([], ["install"], ["install", "--policy"], ["uninstall", "now"], ["status", "x"], ["start"],
+                        ["block-site"], ["block-site", "one.example", "two.example"]):
             result = subprocess.run([str(self.binary), *command], capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 2, command)
             self.assertIn("usage: clearpath-service", result.stderr)
+
+    def test_policy_writer_refuses_to_serve_without_root(self):
+        result = subprocess.run([str(self.binary), "serve-site-blocks"], capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("must run as root", result.stderr)
 
 
 if __name__ == "__main__":

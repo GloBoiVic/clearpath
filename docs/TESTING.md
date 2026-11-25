@@ -169,7 +169,7 @@ Do not use an adult image appearing/not appearing as the sole test: SafeSearch i
 6. `sudo clearpath-service uninstall`: DNS matches the recorded state, no daemon, no Clearpath files, nothing on port 53.
 7. Partial installs: an install whose filter never answers rolls itself back. An install killed partway (`pkill -9 -f "clearpath-service install"`) leaves the record, files and daemon; a new install refuses, and `uninstall` restores everything.
 
-Rollback if the tool itself fails: `sudo networksetup -setdnsservers <service> <recorded servers>` (or `Empty` for automatic) for each service in `/Library/Application Support/Clearpath/recovery.json`, then `sudo launchctl bootout system/io.clearpath.filter`, then remove `/Library/LaunchDaemons/io.clearpath.filter.plist` and that folder. Or restore the VM snapshot.
+If the tool itself fails, restore each service in `/Library/Application Support/Clearpath/recovery.json` with `sudo networksetup -setdnsservers <service> <recorded servers>` (or `Empty` for automatic). Then boot out `system/io.clearpath.site-blocks` and `system/io.clearpath.filter` with `sudo launchctl bootout`. Remove their plists from `/Library/LaunchDaemons` and remove the Clearpath support directory. You can also restore the VM snapshot.
 
 ### Protection health and Restore internet in the VM
 

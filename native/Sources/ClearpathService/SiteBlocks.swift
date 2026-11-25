@@ -28,8 +28,12 @@ extension ServiceManager {
                   var custom = document["custom"] as? [String] else { throw PolicyError.invalidSchema }
             custom.append(domain)
             document["custom"] = custom
-            let data = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
-            _ = try Policy(data: data)
+            let data = try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys])
+            do {
+                _ = try Policy(data: data)
+            } catch PolicyError.tooLarge {
+                throw ServiceError.refused("The installed policy is too large to add another site.")
+            }
             try writeFile(data, to: paths.policy, mode: 0o644)
         }
         return domain

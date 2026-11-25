@@ -22,14 +22,14 @@ final class SiteBlockModel: ObservableObject {
 
     func add(_ domain: String) async -> Bool {
         guard !busy, !domain.isEmpty else { return false }
-        guard domain.utf8.count <= 1024 else {
+        guard domain.utf8.count <= 1024, !domain.utf8.contains(0) else {
             addMessage = "Enter a domain such as example.com."
             return false
         }
         busy = true
         addMessage = nil
         let result = await Task.detached(priority: .userInitiated) {
-            SiteBlockCommand.run(["block-site"], input: Data(domain.utf8))
+            SiteBlockCommand.run(["block-site", domain])
         }.value
         let message = result?.text.trimmingCharacters(in: .newlines) ?? ""
         let saved = result?.status == 0
@@ -58,23 +58,17 @@ private struct SiteBlockCommand: Sendable {
     let data: Data
     var text: String { String(decoding: data, as: UTF8.self) }
 
-    static func run(_ arguments: [String], input: Data? = nil) -> Self? {
+    static func run(_ arguments: [String]) -> Self? {
         guard let executable = Bundle.main.url(forAuxiliaryExecutable: "clearpath-service") else { return nil }
         let process = Process()
         let output = Pipe()
         process.executableURL = executable
         process.arguments = arguments
-        let inputPipe = input.map { _ in Pipe() }
-        if let inputPipe { process.standardInput = inputPipe }
-        else { process.standardInput = FileHandle.nullDevice }
+        process.standardInput = FileHandle.nullDevice
         process.standardOutput = output
         process.standardError = output
         do {
             try process.run()
-            if let input, let pipe = inputPipe {
-                defer { try? pipe.fileHandleForWriting.close() }
-                try pipe.fileHandleForWriting.write(contentsOf: input)
-            }
             let data = output.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
             return Self(status: process.terminationStatus, data: data)
