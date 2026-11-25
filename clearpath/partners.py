@@ -117,6 +117,10 @@ class Pairing:
                 """)
             else:
                 db.execute("SELECT role, email, revision, token_hash, expires_at FROM invites LIMIT 0")
+            # An invitation created by an approved partner change keeps the approved address.
+            if "approved" not in {column[1] for column in db.execute("PRAGMA table_info(invites)")}:
+                db.execute("ALTER TABLE invites ADD COLUMN approved INTEGER NOT NULL DEFAULT 0"
+                           " CHECK (approved IN (0, 1))")
             # Finishing setup is recorded once and cannot be undone.
             db.execute("""
                 CREATE TABLE IF NOT EXISTS setup (
@@ -134,13 +138,14 @@ class Pairing:
     def status(self):
         slots = {role: {"status": "empty", "revision": 0} for role in ROLES}
         with closing(self.connect()) as db:
-            for role, email, revision, expires in db.execute(
-                "SELECT role, email, revision, expires_at FROM invites"
+            for role, email, revision, expires, approved in db.execute(
+                "SELECT role, email, revision, expires_at, approved FROM invites"
             ):
                 status = "accepted" if expires is None else (
                     "expired" if expires <= time.time() else "pending"
                 )
-                slots[role] = {"email": email, "revision": revision, "status": status}
+                slots[role] = {"email": email, "revision": revision, "status": status,
+                               "approved": bool(approved)}
             for role, change in self.decisions.changes(db).items():
                 slots[role]["change"] = change
         return slots
@@ -167,15 +172,18 @@ class Pairing:
         with closing(self.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             current = db.execute(
-                "SELECT revision, token_hash FROM invites WHERE role = ?", (role,)
+                "SELECT revision, token_hash, email, approved FROM invites WHERE role = ?", (role,)
             ).fetchone()
             if current is None:
                 if revision != 0:
                     return False
             elif current[0] != revision or current[1] is None:
                 return False
+            elif current[3] and (email != current[2] or self.decisions.change_open(db)):
+                # Only a new partner change can redirect an approved invitation.
+                return False
             db.execute("""
-                INSERT INTO invites VALUES (?, ?, ?, ?, ?)
+                INSERT INTO invites (role, email, revision, token_hash, expires_at) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT (role) DO UPDATE SET
                     email = excluded.email, revision = excluded.revision,
                     token_hash = excluded.token_hash, expires_at = excluded.expires_at

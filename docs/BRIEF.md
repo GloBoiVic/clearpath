@@ -125,6 +125,7 @@ Free and open source (MIT). No paid Apple Developer Program for now (Victor, 202
 | Open the email link, then tap Approve or Deny | Victor, 2026-11-21 | Opening the link leaves the decision pending, including when a mail scanner opens it. |
 | A replaced partner's open links stop working when the change applies; open requests then wait for the remaining partner or seven days | Victor accepted the recommendation, 2026-11-25 | A replaced person loses all say at once. The new partner gets only requests made after they accept. |
 | Partner-change emails show both the current and the new partner's address | Victor accepted the recommendation, 2026-11-25 | Deciders know who is leaving and who is coming in. |
+| An invitation created by an approved partner change is locked to the approved address. It can be resent to that address; a different address needs a new partner change. Invitations sent during setup stay freely correctable until accepted. | Victor accepted the recommendation, 2026-11-25 | Closes a loophole where the owner could re-point an approved invitation to an address they control |
 | An accepted partner can be replaced, not removed without a replacement, for now ([#49](https://github.com/GloBoiVic/clearpath/issues/49)) | Victor accepted the recommendation, 2026-11-25 | Keeps the change to what #18 asked |
 
 Approved by Victor on 2026-11-21.

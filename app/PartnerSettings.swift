@@ -36,8 +36,12 @@ private struct InvitationSlot: Decodable {
     let revision: Int
     let status: Status
     let change: Change?
+    /// The invitation came from an approved partner change, so only a new change can redirect it.
+    let approved: Bool?
 
     var invited: Bool { status == .pending || status == .accepted }
+    /// The address can change only through a partner change request.
+    var locked: Bool { status == .accepted || approved == true }
 }
 
 private struct SetupState: Decodable {
@@ -155,7 +159,7 @@ private final class PartnerModel: ObservableObject {
         setup = try await client.setup()
         for role in PartnerRole.allCases {
             let slot = slots[role.rawValue]
-            email[role] = slot?.status == .accepted ? "" : slot?.email ?? ""
+            email[role] = slot?.locked == true ? "" : slot?.email ?? ""
         }
         feedback = nil
     }
@@ -185,7 +189,14 @@ private final class PartnerModel: ObservableObject {
     func submit(_ role: PartnerRole, slot: InvitationSlot) async {
         let address = email[role] ?? ""
         await perform {
-            try await client.invite(role, email: address, revision: slot.revision, change: slot.status == .accepted)
+            try await client.invite(role, email: address, revision: slot.revision, change: slot.locked)
+        }
+    }
+
+    /// Sends an approved invitation again to the same address.
+    func resend(_ role: PartnerRole, slot: InvitationSlot) async {
+        await perform {
+            try await client.invite(role, email: slot.email ?? "", revision: slot.revision, change: false)
         }
     }
 
@@ -206,8 +217,13 @@ private struct PartnerRow: View {
             Label(copy[slot.status.rawValue], systemImage: slot.status == .accepted
                   ? "checkmark.circle" : "envelope")
                 .foregroundStyle(.secondary)
-            if slot.status == .accepted {
+            if slot.locked {
                 Text(slot.email ?? "")
+            }
+            if slot.locked, slot.status != .accepted, slot.change?.outcome != .pending {
+                Button(copy[slot.status == .expired ? "send" : "replace"]) {
+                    Task { await model.resend(role, slot: slot) }
+                }
             }
             if let change = slot.change {
                 Label(copy[change.outcome == .pending ? "changePending" : "changeDenied"],
@@ -216,7 +232,7 @@ private struct PartnerRow: View {
                 Text(change.email).foregroundStyle(.secondary)
             }
             if slot.change?.outcome != .pending {
-                let accepted = slot.status == .accepted
+                let accepted = slot.locked
                 let address = Binding(get: { model.email[role] ?? "" },
                                       set: { model.email[role] = $0 })
                 TextField(copy[accepted ? "changeEmail" : "email"], text: address)
@@ -227,7 +243,7 @@ private struct PartnerRow: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(address.wrappedValue.isEmpty)
             }
-            if slot.status == .accepted {
+            if slot.locked {
                 Text(copy["changeRule"]).foregroundStyle(.secondary)
             }
         }

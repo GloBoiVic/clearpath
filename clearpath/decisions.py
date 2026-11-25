@@ -180,16 +180,15 @@ class Decisions:
         """Ask the accepted partners to approve replacing an accepted partner."""
         with closing(self.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
+            # An accepted partner, or an invitation an earlier change approved.
             current = db.execute(
-                "SELECT email FROM invites WHERE role = ? AND revision = ? AND token_hash IS NULL",
+                "SELECT email FROM invites WHERE role = ? AND revision = ? AND (token_hash IS NULL OR approved)",
                 (role, revision),
             ).fetchone()
-            if current is None or db.execute(
-                f"SELECT 1 FROM partner_changes WHERE request_id IN ({PENDING})"
-            ).fetchone():
+            if current is None or self.change_open(db):
                 return False
             request_id = str(uuid4())
-            # The replaced partner is accepted, so the request always has a recipient.
+            # The accepted partners decide. With none, the request waits seven days.
             self.open(db, request_id, "partner-change", "", lambda address, token: message(
                 address, COPY["change"]["subject"],
                 COPY["change"]["request"].format(role=role, current=current[0], email=email)
@@ -197,6 +196,10 @@ class Decisions:
             db.execute("INSERT INTO partner_changes VALUES (?, ?, ?, ?, ?)",
                        (request_id, role, revision, current[0], email))
         return True
+
+    @staticmethod
+    def change_open(db):
+        return db.execute(f"SELECT 1 FROM partner_changes WHERE request_id IN ({PENDING})").fetchone() is not None
 
     @staticmethod
     def changes(db):
@@ -244,8 +247,8 @@ class Decisions:
         if applied:
             try:
                 self.deliver()
-            except OSError:
-                pass  # The durable outbox is retried by the service loop.
+            except (OSError, sqlite3.Error):
+                pass  # The decision is committed. The service loop retries the durable outbox.
         return True
 
     @staticmethod
@@ -254,16 +257,19 @@ class Decisions:
         db.execute("UPDATE decision_recipients SET token_hash = NULL WHERE request_id = ?", (request_id,))
 
     def apply_change(self, db, request_id, origin, *, timed_out):
-        role, revision, current, email = db.execute(
-            "SELECT role, revision, current, email FROM partner_changes WHERE request_id = ?", (request_id,)
+        role, current, email = db.execute(
+            "SELECT role, current, email FROM partner_changes WHERE request_id = ?", (request_id,)
         ).fetchone()
         token = secrets.token_urlsafe(32)
+        # The slot may have been resent to, or accepted by, the same person meanwhile.
         replaced = db.execute("""
-            UPDATE invites SET email = ?, revision = revision + 1, token_hash = ?, expires_at = ?
-            WHERE role = ? AND revision = ? AND email = ? AND token_hash IS NULL
-        """, (email, digest(token), int(time.time()) + LIFETIME, role, revision, current))
+            UPDATE invites SET email = ?, revision = revision + 1, token_hash = ?, expires_at = ?, approved = 1
+            WHERE role = ? AND email = ? AND (token_hash IS NULL OR approved)
+        """, (email, digest(token), int(time.time()) + LIFETIME, role, current))
         if replaced.rowcount != 1:
-            # Only an applied change alters an accepted slot, and one change is open at a time.
+            # Unreachable: only an applied change alters the address of an accepted or approved slot,
+            # and one change is open at a time. Failing here rolls back the whole pass, which
+            # also holds site-removal timeouts, so the guard fails closed.
             raise sqlite3.IntegrityError("The partner changed while the request was open.")
         # The replaced partner loses every open link and stops receiving request mail.
         db.execute(f"DELETE FROM decision_mail WHERE expired = 0 AND role = ? AND request_id IN ({PENDING})",
@@ -291,8 +297,8 @@ class Decisions:
         with closing(self.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             for request_id, domain, kind in db.execute(
-                "SELECT id, domain, kind FROM requests WHERE outcome = 'pending' AND deadline <= ?",
-                (self.clock(),),
+                "SELECT id, domain, kind FROM requests WHERE outcome = 'pending' AND deadline <= ? "
+                "ORDER BY deadline, rowid", (self.clock(),),
             ).fetchall():
                 self.resolve(db, request_id, "timed_out")
                 if kind == "partner-change":

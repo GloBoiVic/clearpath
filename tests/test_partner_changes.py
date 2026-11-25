@@ -260,6 +260,57 @@ class PartnerChanges(unittest.TestCase):
         self.now += WEEK
         self.assertEqual(self.removal(removal_id), "timed_out")
 
+    def test_approved_invitation_keeps_its_address_until_a_new_change_is_approved(self):
+        self.partner("primary", "old")
+        self.partner("backup", "backup")
+        self.assertEqual(self.change("primary", "new", self.slots()["primary"]["revision"]), 201)
+        self.assertEqual(self.vote(self.link("backup", "Clearpath partner change request"), "approve")[0], 200)
+        slot = self.slots()["primary"]
+        self.assertEqual((slot["email"], slot["status"], slot["approved"]), ("new@example.test", "pending", True))
+        first = self.link("new", "Clearpath partner invitation")
+        self.assertEqual(self.invite("primary", "mine", slot["revision"]), 409)
+        self.assertEqual(self.invite("primary", "new", slot["revision"]), 201)
+        self.assertEqual(self.accept(first), 403)
+        with sqlite3.connect(self.state / "pairing.sqlite3") as db:
+            db.execute("UPDATE invites SET expires_at = 0 WHERE role = 'primary'")
+        slot = self.slots()["primary"]
+        self.assertEqual(slot["status"], "expired")
+        self.assertEqual(self.invite("primary", "mine", slot["revision"]), 409)
+        self.assertEqual(self.slots()["primary"]["email"], "new@example.test")
+
+        # Redirecting it is a new change, decided by the accepted partner.
+        self.assertEqual(self.change("primary", "other", slot["revision"]), 201)
+        self.assertEqual(self.invite("primary", "new", slot["revision"]), 409)
+        self.assertEqual(self.links("new", "Clearpath partner change request"), [])
+        batch = email.message_from_bytes((self.mail / self.change_id() / "backup.eml").read_bytes())
+        link = urlsplit(batch.get_payload(decode=True).decode().strip().splitlines()[-1])
+        self.assertEqual(self.vote(link, "approve")[0], 200)
+        slot = self.slots()["primary"]
+        self.assertEqual((slot["email"], slot["status"], slot["approved"]), ("other@example.test", "pending", True))
+        self.assertEqual(self.accept(self.link("other", "Clearpath partner invitation")), 200)
+
+    def test_approved_invitation_with_no_accepted_partner_changes_only_after_seven_days(self):
+        self.partner("primary", "old")
+        self.assertEqual(self.change("primary", "new", self.slots()["primary"]["revision"]), 201)
+        self.assertEqual(self.vote(self.link("old", "Clearpath partner change request"), "approve")[0], 200)
+        self.assertEqual(self.change("primary", "mine", self.slots()["primary"]["revision"]), 201)
+        self.assertEqual(self.notices(self.change_id()), {})
+        self.assertEqual(self.links("mine", "Clearpath partner invitation"), [])
+        self.now += WEEK - 1
+        self.assertEqual(self.slots()["primary"]["email"], "new@example.test")
+        self.now += 1
+        self.assertEqual(self.slots()["primary"]["email"], "mine@example.test")
+        self.assertEqual(set(self.notices(self.change_id())), {"new-partner", "replaced-partner"})
+
+    def test_partner_change_ids_are_not_site_removals(self):
+        self.partner("primary", "old")
+        self.assertEqual(self.change("primary", "new", self.slots()["primary"]["revision"]), 201)
+        change_id = self.change_id()
+        self.assertEqual(self.owner("GET", "/requests/site-removal/" + change_id)[0], 404)
+        self.assertEqual(self.owner("POST", "/requests/site-removal", {"id": change_id, "domain": "blocked.example"})[0], 409)
+        self.assertEqual(self.vote(self.link("old", "Clearpath partner change request"), "approve")[0], 200)
+        self.assertEqual(self.owner("GET", "/requests/site-removal/" + change_id)[0], 404)
+
     def test_requests_saved_before_partner_changes_open_as_site_removals(self):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory)
@@ -275,6 +326,16 @@ class PartnerChanges(unittest.TestCase):
                     );
                     DROP TABLE old;
                     DROP TABLE setup;
+                    DROP TABLE invites;
+                    CREATE TABLE invites (
+                        role TEXT PRIMARY KEY CHECK (role IN ('primary', 'backup')),
+                        email TEXT NOT NULL,
+                        revision INTEGER NOT NULL CHECK (revision > 0),
+                        token_hash BLOB UNIQUE,
+                        expires_at INTEGER,
+                        CHECK ((token_hash IS NULL) = (expires_at IS NULL))
+                    );
+                    INSERT INTO invites VALUES ('primary', 'saved@example.test', 2, NULL, NULL);
                 """)
                 saved = str(uuid4())
                 db.execute("INSERT INTO requests VALUES (?, 'blocked.example', 5, 'pending')", (saved,))
@@ -282,6 +343,11 @@ class PartnerChanges(unittest.TestCase):
             self.assertEqual(pairing.decisions.status(saved),
                              {"id": saved, "domain": "blocked.example", "outcome": "pending"})
             self.assertEqual(pairing.setup(), {"complete": False, "solo": False})
+            with sqlite3.connect(state / "pairing.sqlite3") as db:
+                columns = [column[1] for column in db.execute("PRAGMA table_info(invites)")]
+            self.assertIn("approved", columns)
+            self.assertEqual(pairing.status()["primary"],
+                             {"email": "saved@example.test", "revision": 2, "status": "accepted", "approved": False})
 
 
 if __name__ == "__main__":
