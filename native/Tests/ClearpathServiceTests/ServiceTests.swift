@@ -27,6 +27,7 @@ final class FakeMac: SystemControl {
     resolver #1
       nameserver[0] : 203.0.113.8
     """
+    var resolverTracksFilterDNS = false
     var loaded = false
     var siteBlockJobLoaded = false
     var siteBlockJobStarts = true
@@ -62,6 +63,9 @@ final class FakeMac: SystemControl {
             }
             return CommandResult(status: 0, output: "")
         case (.scutil, _):
+            if resolverTracksFilterDNS && services.allSatisfy({ $0.servers == [ServiceManager.listenAddress] }) {
+                return CommandResult(status: 0, output: "resolver #1\n  nameserver[0] : 127.0.0.1\n")
+            }
             return CommandResult(status: 0, output: resolverState)
         case (.launchctl, "bootstrap"):
             if arguments[2].hasSuffix("/\(ServicePaths.communityListLabel).plist") {
@@ -371,7 +375,8 @@ final class ServiceTests: XCTestCase {
 
     func test_status_reports_install_daemon_and_dns() throws {
         XCTAssertEqual(try manager.status(), ServiceStatus(installed: false, daemonLoaded: false, pid: nil, answering: false,
-                                                          dnsPointsToFilter: false, services: try manager.readServices()))
+                                                          dnsPointsToFilter: false, services: try manager.readServices(),
+                                                          setupInstallAvailable: true))
         try install()
         let status = try manager.status()
         XCTAssertTrue(status.installed && status.daemonLoaded && status.answering && status.dnsPointsToFilter)

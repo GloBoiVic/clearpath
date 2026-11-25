@@ -84,9 +84,11 @@ The email includes the requested site and the decision deadline. Opening its lin
 
 ### Setup
 
-Use native grouped sections for **DNS filter**, **Safari**, **Chrome and Firefox**, and **Partners**. **Check DNS status** reports the result of the most recent check. Explain the Private Relay setting, reveal the browser profile in Finder, and specify how to check its effective settings in each browser.
+Use native grouped sections for **DNS filter**, **Safari**, **Chrome and Firefox**, and **Partners**. Start with **Install Clearpath** and explain the macOS administrator prompt. Show install progress, whether cancellation left the Mac unchanged, and the outcome of an attempted rollback. **Check DNS status** reports the last check. Show **Open at login** separately from DNS status. After DNS protection is on, explain the Private Relay setting, reveal the browser profile in Finder, and specify how to check its effective settings in each browser.
 
 **Partners** repeats the Partner settings rows for each role, then **A backup partner is strongly recommended.** and the solo warning: **Without a partner, nobody is told when you remove a block or undo Clearpath. You can undo Clearpath without anyone knowing.** With no invited or accepted partner, **Finish setup** stays disabled until the user checks **I understand I can undo Clearpath without anyone knowing**. Finishing is recorded once. Afterwards the section shows **Setup complete. Removing a block or changing an accepted partner now needs partner approval or a 7-day wait.**
+
+For the solo trial without a configured partner service, show the same warning and acknowledgement. **Finish setup** records completion locally and then shows **Setup complete without a partner**.
 
 ### Partner settings
 

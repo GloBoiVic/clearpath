@@ -2,7 +2,13 @@
 
 Clearpath is a free, open-source macOS app that blocks adult and NSFW websites in every browser, with an accountability partner instead of spyware. See the [product brief](docs/BRIEF.md) and [architecture](docs/ARCHITECTURE.md). Do not fork distraction-free's resolver or installer. DNS filtering works when requests reach it. Arbitrary encrypted DNS, proxies, VPNs and administrator access can bypass it. Browser setup observations and the remaining V1 acceptance cases are in [docs/RESULTS.md](docs/RESULTS.md).
 
-This repository contains a Swift DNS filter and service, an isolated Python DNS harness, and the menu-bar app. Run `./build.sh` on macOS with the Swift toolchain. The shield shows live DNS protection status and offers **Restore internet** if the installed filter stays down. Use **Block a site** to enter a domain or choose a shortcut, and **Blocked sites** to see the installed rules. **Set up protection** can check DNS and reveal the Chrome and Firefox profile. The service installer and Device Management make system changes during the disposable VM procedure. **Partner settings** can connect to a local pairing service. When the app is running and macOS allows notifications, a blocked lookup shows a quiet generic **Blocked by Clearpath** alert. The filter sends no domain or attempt data, and continues filtering if the app quits; events while the app is not running are not shown later.
+This repository contains a Swift DNS filter and service, an isolated Python DNS harness, and the menu-bar app. Run `./build.sh` on macOS 15 or later with the Swift toolchain. The shield shows live DNS protection status and offers **Restore internet** if the installed filter stays down. Use **Block a site** to enter a domain or choose a shortcut, and **Blocked sites** to see the installed rules. **Set up protection** installs the filter and guides browser setup. **Partner settings** can connect to a local pairing service. When the app is running and macOS allows notifications, a blocked lookup shows a quiet generic **Blocked by Clearpath** alert. The filter sends no domain or attempt data, and continues filtering if the app quits; events while the app is not running are not shown later.
+
+## Install Clearpath from setup (disposable VM only)
+
+Open the ad-hoc signed `Clearpath.app` from the build and click **Install Clearpath**. Authorize the install in the macOS administrator prompt. Clearpath installs in Applications, downloads and validates the HaGeZi adult blocklist, and turns on DNS filtering with the bundled Google, Bing, and DuckDuckGo SafeSearch rules. Canceling the prompt leaves the Mac unchanged. If the installer changes DNS and then fails, it restores the saved settings and reports the result.
+
+Clearpath reopens from Applications and registers to open at login. Setup shows the login item status and offers a link to Login Items if macOS requires approval. Once protection is on, continue with the browser instructions and **Finish setup**. For the solo trial, acknowledge the solo warning to finish. Reopening an installed copy preserves its DNS settings, rules, and login item.
 
 ## Try partner invitations locally
 
@@ -102,7 +108,7 @@ If installation fails, it rolls itself back. `uninstall` restores DNS from the r
 
 ### Browser setup (disposable VM only)
 
-After installing the filter with your DNS policy, open **Set up protection** from the shield menu and choose **Check DNS status**. This checks the filter and the Mac's DNS settings. For Safari, turn off iCloud Private Relay if it’s on. [Apple’s Private Relay instructions](https://support.apple.com/guide/mac-help/mchlecadabe0/mac)
+After protection is on, open **Set up protection** from the shield menu and choose **Check DNS status** to check the filter and the Mac's DNS settings. For Safari, turn off iCloud Private Relay if it’s on. [Apple’s Private Relay instructions](https://support.apple.com/guide/mac-help/mchlecadabe0/mac)
 
 For Chrome and Firefox, select **Show browser profile in Finder**, open **Clearpath Browser Policies.mobileconfig**, and approve it in **System Settings → General → Device Management**. Restart the browsers and verify their policies in `chrome://policy` and `about:policies`. The profile disables browser-managed Secure DNS and enables Chrome’s Google SafeSearch policy. The filter supplies domain blocking and the Google, Bing, and DuckDuckGo SafeSearch rules configured in your DNS policy. [Chrome DNS policy](https://chromeenterprise.google/policies/#DnsOverHttpsMode) · [Chrome Google SafeSearch policy](https://chromeenterprise.google/policies/#ForceGoogleSafeSearch) · [Firefox DNS policy](https://mozilla.github.io/policy-templates/#dnsoverhttps)
 

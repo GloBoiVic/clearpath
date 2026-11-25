@@ -40,6 +40,69 @@ final class CommunityListTests: XCTestCase {
               domains.joined(separator: "\n") + "\n").utf8)
     }
 
+    private func installFromSetup(source: CommunityListSource, finish: () throws -> Void = {}) throws {
+        let policy = root.appendingPathComponent("default-policy.json")
+        try Data(#"{"adult":[],"custom":[],"allow":[],"safesearch":{"www.google.com":"forcesafesearch.google.com"}}"#.utf8).write(to: policy)
+        try manager.install(filter: filterBinary, policy: policy, upstream: nil, upstreamPort: 53,
+                            controlTool: filterBinary.deletingLastPathComponent().appendingPathComponent("clearpath-service"),
+                            communitySource: source, finish: finish)
+    }
+
+    func test_setup_activates_the_validated_community_list_and_safesearch_before_moving_the_app() throws {
+        let domains = common + ["reddit.com", "forcesafesearch.google.com"]
+        let http = try CommunityHTTP(list(domains, version: firstVersion))
+        defer { http.stop() }
+        mac.resolverTracksFilterDNS = true
+        XCTAssertEqual(try manager.status().setupInstallAvailable, true)
+        mac.onBootstrap = {
+            XCTAssertEqual((try? self.manager.installedPolicy())?.adult, Set(self.common))
+            XCTAssertEqual((try? self.manager.installedPolicy())?.safeSearch["www.google.com"], "forcesafesearch.google.com")
+        }
+        var publications = 0
+        try installFromSetup(source: http.source) {
+            publications += 1
+            let installed = try manager.status()
+            XCTAssertEqual(installed.defaultResolverUsesFilter, true)
+            XCTAssertEqual(installed.communityList?.sourceVersion, firstVersion)
+        }
+        XCTAssertEqual(publications, 1)
+        XCTAssertEqual(try manager.status().setupInstallAvailable, false)
+        XCTAssertThrowsError(try installFromSetup(source: http.source) { XCTFail("Published twice") })
+        XCTAssertEqual(http.requests.count, 1)
+    }
+
+    func test_setup_leaves_dns_alone_when_the_community_list_is_invalid() throws {
+        let http = try CommunityHTTP(list(["incomplete.example"], version: firstVersion))
+        defer { http.stop() }
+        let before = mac.dns
+        XCTAssertThrowsError(try installFromSetup(source: http.source) { XCTFail("Published without a list") })
+        XCTAssertEqual(mac.dns, before)
+        XCTAssertNil(mac.index(of: "/usr/sbin/networksetup -setdnsservers"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.recovery.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.policy.path))
+    }
+
+    func test_setup_rolls_back_if_dns_cannot_be_verified_or_the_app_cannot_be_moved() throws {
+        let http = try CommunityHTTP(list(common, version: firstVersion))
+        defer { http.stop() }
+        let before = mac.dns
+        XCTAssertThrowsError(try installFromSetup(source: http.source) { XCTFail("Published with unverified DNS") }) {
+            XCTAssertTrue(String(describing: $0).contains("was rolled back"))
+        }
+        mac.resolverTracksFilterDNS = true
+        XCTAssertThrowsError(try installFromSetup(source: http.source) {
+            throw ServiceError.failed("The destination is occupied.")
+        }) {
+            XCTAssertTrue(String(describing: $0).contains("was rolled back"))
+        }
+        XCTAssertEqual(mac.dns, before)
+        XCTAssertFalse(mac.loaded)
+        XCTAssertFalse(mac.siteBlockJobLoaded)
+        XCTAssertFalse(mac.communityListJobLoaded)
+        XCTAssertEqual(try manager.status().setupInstallAvailable, true)
+        XCTAssertNil(try manager.status().communityList)
+    }
+
     func test_installer_registers_catch_up_at_boot_and_wake_and_uninstall_removes_the_job_and_state() throws {
         mac.communityListJobStarts = false
         XCTAssertThrowsError(try install())

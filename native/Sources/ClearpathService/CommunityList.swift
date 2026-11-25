@@ -64,6 +64,18 @@ struct CommunityListSource {
         }
         return domains.filter { !protectedRules.contains($0) && !Policy.matches($0, rules: Self.mixedSites) }
     }
+
+    func fetch() throws -> (version: String, domains: Set<String>) {
+        try parse(CommunityListDownload.fetch(url))
+    }
+
+    func checkedDomains(_ domains: Set<String>, previous: Policy) throws -> Set<String> {
+        let adult = acceptedDomains(domains, previous: previous)
+        guard adult.count >= minimumDomainCount else {
+            throw ServiceError.refused("Too few community domains remain after exclusions.")
+        }
+        return adult
+    }
 }
 
 extension ServiceManager {
@@ -88,7 +100,7 @@ extension ServiceManager {
         }
         guard try readCommunityListStatus()?.isDue(at: now()) != false else { return }
         // Do the slow work before taking the policy writer's lock.
-        let staged = try source.parse(CommunityListDownload.fetch(source.url))
+        let staged = try source.fetch()
 
         try withServiceLock {
             guard try readRecord() == installation else {
@@ -98,10 +110,7 @@ extension ServiceManager {
             let status = try readCommunityListStatus()
             guard status?.isDue(at: checkedAt) != false else { return }
             let policy = try installedPolicy()
-            let adult = source.acceptedDomains(staged.domains, previous: policy)
-            guard adult.count >= source.minimumDomainCount else {
-                throw ServiceError.refused("Too few community domains remain after exclusions.")
-            }
+            let adult = try source.checkedDomains(staged.domains, previous: policy)
             if let status {
                 guard staged.version >= status.sourceVersion,
                       staged.version != status.sourceVersion || adult == policy.adult else {

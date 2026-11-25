@@ -283,11 +283,28 @@ struct PartnerSettings: View {
 
 /// The Partners section of Setup: invite partners, then finish setup with or without one.
 struct SetupPartners: View {
+    static var usesPartnerService: Bool {
+        ProcessInfo.processInfo.environment["CLEARPATH_PARTNER_STATE"] != nil
+    }
+
     @StateObject private var model = PartnerModel()
     @State private var acknowledged = false
+    @AppStorage("soloSetupComplete") private var soloSetupComplete = false
 
     var body: some View {
-        if let copy = PartnerCopy.bundled {
+        if let copy = PartnerCopy.bundled, !Self.usesPartnerService {
+            Section(copy["partners"]) {
+                if soloSetupComplete {
+                    Label("Setup complete without a partner", systemImage: "checkmark.circle")
+                } else {
+                    Text(copy["soloWarning"]).foregroundStyle(.secondary)
+                    Toggle(copy["soloAcknowledge"], isOn: $acknowledged)
+                    Button(copy["finish"]) { soloSetupComplete = true }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!acknowledged)
+                }
+            }
+        } else if let copy = PartnerCopy.bundled {
             Section(copy["partners"]) {
                 ForEach(PartnerRole.allCases) { role in
                     if let slot = model.slots[role.rawValue] {

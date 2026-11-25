@@ -1,0 +1,14 @@
+{
+  "adult": [],
+  "custom": [],
+  "allow": [],
+  "safesearch": {
+    "google.com": "forcesafesearch.google.com",
+    "www.google.com": "forcesafesearch.google.com",
+    "www.google.co.uk": "forcesafesearch.google.com",
+    "www.bing.com": "strict.bing.com",
+    "bing.com": "strict.bing.com",
+    "edgeservices.bing.com": "strict.bing.com",
+    "duckduckgo.com": "safe.duckduckgo.com"
+  }
+}
