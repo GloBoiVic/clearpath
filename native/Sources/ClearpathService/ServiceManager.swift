@@ -6,6 +6,7 @@ import ClearpathCore
 public struct ServicePaths: Sendable {
     public static let label = "io.clearpath.filter"
     static let siteBlockLabel = "io.clearpath.site-blocks"
+    static let communityListLabel = "io.clearpath.community-list"
     public let root: URL
     public init(root: URL = URL(fileURLWithPath: "/")) { self.root = root }
     public var supportDirectory: URL { root.appendingPathComponent("Library/Application Support/Clearpath") }
@@ -14,10 +15,14 @@ public struct ServicePaths: Sendable {
     public var policy: URL { supportDirectory.appendingPathComponent("policy.json") }
     public var recovery: URL { supportDirectory.appendingPathComponent("recovery.json") }
     var internetRecovery: URL { supportDirectory.appendingPathComponent("internet-recovery.json") }
+    var communityListStatus: URL { supportDirectory.appendingPathComponent("community-list.json") }
     public var daemonPlist: URL { root.appendingPathComponent("Library/LaunchDaemons/\(Self.label).plist") }
     var siteBlockPlist: URL { daemonPlist.deletingLastPathComponent().appendingPathComponent("\(Self.siteBlockLabel).plist") }
+    var communityListPlist: URL { daemonPlist.deletingLastPathComponent().appendingPathComponent("\(Self.communityListLabel).plist") }
     /// Clearpath's files only, in removal order: the recovery record goes last.
-    var owned: [URL] { [siteBlockPlist, daemonPlist, filter, controlTool, policy, internetRecovery, recovery] }
+    var owned: [URL] {
+        [communityListPlist, siteBlockPlist, daemonPlist, filter, controlTool, policy, communityListStatus, internetRecovery, recovery]
+    }
 }
 
 /// One network service's DNS setting. No servers means automatic (DHCP) DNS.
@@ -53,6 +58,7 @@ public struct ServiceStatus: Codable, Equatable, Sendable {
     public internal(set) var restoreEvent: InternetRestoreEvent?
     public internal(set) var restoreAvailable: Bool? = nil
     public internal(set) var defaultResolverUsesFilter: Bool? = nil
+    public internal(set) var communityList: CommunityListStatus? = nil
 }
 
 public enum ServiceError: Error, Equatable, CustomStringConvertible {
@@ -89,7 +95,7 @@ public final class ServiceManager {
         guard system.isRoot else { throw ServiceError.refused("Install must run as root (sudo).") }
         let fm = FileManager.default
         guard !fm.fileExists(atPath: paths.recovery.path), !fm.fileExists(atPath: paths.daemonPlist.path),
-              !fm.fileExists(atPath: paths.siteBlockPlist.path) else {
+              !fm.fileExists(atPath: paths.siteBlockPlist.path), !fm.fileExists(atPath: paths.communityListPlist.path) else {
             throw ServiceError.refused("Clearpath is already installed, or an earlier install stopped partway. Run uninstall first.")
         }
         let filterData = try readRegularFile(filter, what: "filter")
@@ -128,6 +134,7 @@ public final class ServiceManager {
         try makeDirectory(paths.supportDirectory)
         try withServiceLock {
             guard !fm.fileExists(atPath: paths.daemonPlist.path), !fm.fileExists(atPath: paths.siteBlockPlist.path),
+                  !fm.fileExists(atPath: paths.communityListPlist.path), !fm.fileExists(atPath: paths.communityListStatus.path),
                   !fm.fileExists(atPath: paths.internetRecovery.path) else {
                 throw ServiceError.refused("An earlier Clearpath install is present. Run uninstall first.")
             }
@@ -152,6 +159,10 @@ public final class ServiceManager {
                 log("Filter answering on \(Self.listenAddress):\(Self.listenPort).")
                 for service in services {
                     try setDNS(service.name, to: [Self.listenAddress])
+                }
+                if controlData != nil {
+                    try writeFile(try communityListPlist(), to: paths.communityListPlist, mode: 0o644)
+                    try check(system.run(.launchctl, ["bootstrap", "system", paths.communityListPlist.path]), "launchctl bootstrap community-list job")
                 }
                 log("DNS for every network service now points at the filter.")
             } catch {
@@ -182,7 +193,7 @@ public final class ServiceManager {
             // Without the record the original setting is unknown, and stopping the daemon would cut DNS.
             throw ServiceError.refused("The recovery record is missing and \(stuck.name) still uses \(Self.listenAddress). Set its DNS back by hand first (networksetup -setdnsservers \"\(stuck.name)\" Empty for automatic).")
         }
-        for label in [ServicePaths.siteBlockLabel, ServicePaths.label] where daemonLoaded(label: label) {
+        for label in [ServicePaths.communityListLabel, ServicePaths.siteBlockLabel, ServicePaths.label] where daemonLoaded(label: label) {
             let result = try system.run(.launchctl, ["bootout", "system/\(label)"])
             if result.status != 0 && daemonLoaded(label: label) {
                 throw ServiceError.failed("launchctl bootout failed: \(result.output)")
@@ -209,6 +220,7 @@ public final class ServiceManager {
                              services: services)
         if status.installed {
             status.restoreAvailable = FileManager.default.isExecutableFile(atPath: paths.controlTool.path)
+            status.communityList = try? readCommunityListStatus()
             try applyRecoveryStatus(to: &status)
             if status.dnsPointsToFilter && status.answering {
                 let resolver = try system.run(.scutil, ["--dns"])
