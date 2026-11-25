@@ -3,6 +3,7 @@ import SwiftUI
 
 struct Panel: View {
     @ObservedObject var health: ProtectionHealth
+    @ObservedObject var siteBlocks: SiteBlockModel
     let openBlockSite: () -> Void
     let openBlockedSites: () -> Void
     let openPartnerSettings: () -> Void
@@ -18,7 +19,7 @@ struct Panel: View {
             }
             .font(.system(size: 17, weight: .semibold))
             row("Partner", icon: "person.2", value: "See settings")
-            row("Pending requests", icon: "tray", value: "Unavailable")
+            row("Pending requests", icon: "tray", value: siteBlocks.pendingCount.map(String.init) ?? "Unavailable")
             Divider()
             if health.state == .restored {
                 Text("DNS filtering is off.").foregroundStyle(.secondary)

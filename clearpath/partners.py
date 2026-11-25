@@ -3,7 +3,6 @@
 import argparse
 from contextlib import closing
 from email.message import EmailMessage
-import hashlib
 from html import escape
 from hmac import compare_digest
 from http import HTTPStatus
@@ -18,14 +17,15 @@ import stat
 import sys
 import tempfile
 import time
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
+
+from .decisions import Decisions, TOKEN, digest, valid_domain, valid_id
 
 COPY = json.loads(Path(__file__).with_name("partner-copy.json").read_text(encoding="utf-8"))
 
 
 ROLES = ("primary", "backup")
 INVITE_LIFETIME = 7 * 24 * 60 * 60
-TOKEN = re.compile(r"[A-Za-z0-9_-]{43}", re.ASCII)
 ADDRESS = re.compile(r"[A-Za-z0-9_+%-]+(?:\.[A-Za-z0-9_+%-]+)*@example\.test")
 # Fragments stay in the browser. Only the explicit form submit sends the token.
 INVITE_SCRIPT = b"""
@@ -36,8 +36,43 @@ document.querySelector("button").disabled = !/^[A-Za-z0-9_-]{43}$/.test(token);
 """
 
 
-def digest(token):
-    return hashlib.sha256(token.encode("ascii")).digest()
+DECISION_SCRIPT = """
+const description = document.querySelector("p");
+const input = document.querySelector("input");
+const buttons = document.querySelectorAll("button");
+let preview = 0;
+
+function showRequest() {
+    const current = ++preview;
+    const token = location.hash.slice(1);
+    history.replaceState(null, "", location.pathname);
+    input.value = "";
+    buttons.forEach(button => { button.disabled = true; });
+    const unavailable = () => {
+        if (current === preview) description.textContent = "This request is no longer available.";
+    };
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
+        unavailable();
+        return;
+    }
+    description.textContent = "Checking your decision link…";
+    fetch("/decision/preview", { method: "POST", body: new URLSearchParams({ token }) })
+        .then(response => {
+            if (!response.ok) throw new Error();
+            return response.json();
+        })
+        .then(({ domain }) => {
+            if (current !== preview) return;
+            description.textContent = "Confirm your decision on the request to unblock " + domain +
+                ". The selected block covers the domain and its subdomains.";
+            input.value = token;
+            buttons.forEach(button => { button.disabled = false; });
+        })
+        .catch(unavailable);
+}
+window.addEventListener("hashchange", showRequest);
+showRequest();
+"""
 
 
 def private_directory(path):
@@ -48,7 +83,7 @@ def private_directory(path):
 
 
 class Pairing:
-    def __init__(self, directory):
+    def __init__(self, directory, clock=None):
         private_directory(directory)
         self.database = directory / "pairing.sqlite3"
         self.mail = directory / "mail"
@@ -78,6 +113,7 @@ class Pairing:
                 """)
             else:
                 db.execute("SELECT role, email, revision, token_hash, expires_at FROM invites LIMIT 0")
+        self.decisions = Decisions(self.connect, self.mail, clock)
 
     def connect(self):
         return sqlite3.connect(self.database_uri + "?mode=rw", uri=True)
@@ -167,7 +203,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'none'; script-src 'self'; form-action 'self'; "
+            "default-src 'none'; script-src 'self'; connect-src 'self'; form-action 'self'; "
             "base-uri 'none'; frame-ancestors 'none'",
         )
         self.end_headers()
@@ -216,6 +252,20 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(HTTPStatus.OK, data, "application/json")
         elif self.path == "/invitation.js":
             self.respond(HTTPStatus.OK, INVITE_SCRIPT, "text/javascript")
+        elif self.path == "/decision.js":
+            self.respond(HTTPStatus.OK, DECISION_SCRIPT, "text/javascript")
+        elif self.path == "/decision":
+            self.page(
+                HTTPStatus.OK, "Review site removal",
+                '<p>Checking your decision link…</p>'
+                '<form method="post" action="/decision/confirm">'
+                '<input type="hidden" name="token">'
+                '<button name="choice" value="deny" disabled>Deny</button> '
+                '<button name="choice" value="approve" disabled>Approve</button></form>'
+                '<script src="/decision.js" defer></script>',
+            )
+        elif self.path.startswith("/requests/site-removal/"):
+            self.removal_status(self.path.removeprefix("/requests/site-removal/"))
         elif role := self.role("/invite/"):
             self.page(
                 HTTPStatus.OK, COPY["title"],
@@ -231,6 +281,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.trusted_host():
             self.respond(HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/requests/site-removal":
+            self.submit_removal()
+            return
+        if self.path in ("/decision/preview", "/decision/confirm"):
+            self.submit_decision(preview=self.path.endswith("/preview"))
             return
         role = self.role("/partners/")
         if role:
@@ -279,14 +335,89 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.page(HTTPStatus.FORBIDDEN, COPY["unavailable"])
 
+    def submit_removal(self):
+        if not self.owner():
+            self.respond(HTTPStatus.UNAUTHORIZED)
+            return
+        try:
+            form = json.loads(self.body("application/json"))
+            if (not isinstance(form, dict) or set(form) != {"id", "domain"}
+                    or not valid_id(form["id"]) or not valid_domain(form["domain"])):
+                raise ValueError
+            decisions = self.server.pairing.decisions
+            if not decisions.submit(form["id"], form["domain"], self.server.origin):
+                self.respond(HTTPStatus.CONFLICT)
+                return
+        except (ValueError, RecursionError):
+            self.respond(HTTPStatus.BAD_REQUEST)
+            return
+        except sqlite3.Error:
+            self.respond(HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        self.removal_status(form["id"])
+
+    def removal_status(self, request_id):
+        if not self.owner():
+            self.respond(HTTPStatus.UNAUTHORIZED)
+            return
+        if not valid_id(request_id):
+            self.respond(HTTPStatus.NOT_FOUND)
+            return
+        decisions = self.server.pairing.decisions
+        try:
+            decisions.advance()
+            result = decisions.status(request_id)
+        except (OSError, sqlite3.Error):
+            self.respond(HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        if result is None:
+            self.respond(HTTPStatus.NOT_FOUND)
+        else:
+            self.respond(HTTPStatus.OK, json.dumps(result), "application/json")
+
+    def submit_decision(self, *, preview):
+        try:
+            form = parse_qs(self.body("application/x-www-form-urlencoded"),
+                            keep_blank_values=True, strict_parsing=True)
+            tokens = form.get("token", [])
+            if len(tokens) != 1 or not TOKEN.fullmatch(tokens[0]):
+                raise ValueError
+            decisions = self.server.pairing.decisions
+            if preview and set(form) == {"token"}:
+                result = decisions.preview(tokens[0])
+                if result is not None:
+                    self.respond(HTTPStatus.OK, json.dumps(result), "application/json")
+                    return
+            if not preview and set(form) == {"token", "choice"}:
+                outcome = {("approve",): "approved", ("deny",): "denied"}.get(tuple(form["choice"]))
+                if outcome and decisions.decide(tokens[0], outcome):
+                    self.page(HTTPStatus.OK, "Request " + outcome)
+                    return
+        except ValueError:
+            pass
+        except sqlite3.Error:
+            self.page(HTTPStatus.SERVICE_UNAVAILABLE, "Could not confirm your decision. Try again.")
+            return
+        self.page(HTTPStatus.FORBIDDEN, "This request is no longer available.")
+
 
 class PairingServer(HTTPServer):
-    def __init__(self, port, pairing):
+    def __init__(self, port, pairing, public_origin=None):
         super().__init__(("127.0.0.1", port), Handler)
-        self.authority = f"127.0.0.1:{self.server_port}"
-        self.origin = f"http://{self.authority}"
+        self.origin = public_origin or f"http://127.0.0.1:{self.server_port}"
+        self.authority = urlsplit(self.origin).netloc
         self.pairing = pairing
         self.owner_key = pairing.owner_key.encode("ascii")
+        self.advance_at = 0
+
+    def service_actions(self):
+        now = time.monotonic()
+        if now >= self.advance_at:
+            self.advance_at = now + 30
+            try:
+                self.pairing.decisions.advance()
+            except (OSError, sqlite3.Error):
+                pass  # Retry the durable outbox without logging private records.
 
     def handle_error(self, _request, _client_address):
         # Untrusted input and private record details stay out of service logs.
@@ -297,12 +428,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state-dir", type=Path, required=True)
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--public-origin", help="HTTPS origin supplied by a trusted reverse proxy")
     args = parser.parse_args()
     if not 0 <= args.port <= 65535:
         parser.error("Port must be between 0 and 65535.")
+    if args.public_origin is not None:
+        try:
+            origin = urlsplit(args.public_origin)
+            valid = (origin.scheme == "https" and origin.hostname and origin.username is None
+                     and origin.port != 0 and args.public_origin == f"https://{origin.netloc}")
+        except ValueError:
+            valid = False
+        if not valid:
+            parser.error("Public origin must be an HTTPS origin without credentials or a path.")
     os.umask(0o077)
     try:
-        with PairingServer(args.port, Pairing(args.state_dir)) as server:
+        with PairingServer(args.port, Pairing(args.state_dir), args.public_origin) as server:
             print(f"Pairing service listening at {server.origin}", flush=True)
             server.serve_forever()
     except (OSError, ValueError, sqlite3.Error):

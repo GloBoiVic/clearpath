@@ -50,11 +50,27 @@ private struct InvitationClient {
 
     func request(_ path: String, body: Data? = nil) async throws -> Data {
         let env = ProcessInfo.processInfo.environment
-        guard let directory = env["CLEARPATH_PARTNER_STATE"],
-              let port = UInt16(env["CLEARPATH_PARTNER_PORT"] ?? "8765"), port > 0,
-              let url = URL(string: "http://127.0.0.1:\(port)\(path)") else {
+        guard let directory = env["CLEARPATH_PARTNER_STATE"] else {
             throw Failure.unavailable
         }
+        let origin: URLComponents
+        if let configured = env["CLEARPATH_PARTNER_ORIGIN"] {
+            guard let parts = URLComponents(string: configured), parts.scheme == "https",
+                  let host = parts.host, !host.isEmpty, parts.user == nil, parts.password == nil,
+                  parts.path.isEmpty, parts.query == nil, parts.fragment == nil else {
+                throw Failure.unavailable
+            }
+            origin = parts
+        } else {
+            guard let port = UInt16(env["CLEARPATH_PARTNER_PORT"] ?? "8765"), port > 0,
+                  let local = URLComponents(string: "http://127.0.0.1:\(port)") else {
+                throw Failure.unavailable
+            }
+            origin = local
+        }
+        var endpoint = origin
+        endpoint.path = path
+        guard let url = endpoint.url else { throw Failure.unavailable }
         let keyFile = URL(fileURLWithPath: directory).appendingPathComponent("owner-key")
         let key = try String(contentsOf: keyFile, encoding: .ascii)
         guard key.range(of: "^[A-Za-z0-9_-]{43}$", options: .regularExpression) != nil else {

@@ -22,9 +22,15 @@ The service binds only to `127.0.0.1`. The default port is 8765. To use another 
 
 This slice uses a local file sink with synthetic addresses. Remote deployment and real email delivery are pending.
 
+## Test the site removal flow
+
+Run `swift test --package-path native --scratch-path artifacts/native-build --filter SiteRemovalTests` on macOS with Python 3.9+ on `PATH`. The test starts the real pairing service with a fixture clock and private mail sink. It sends synthetic requests through the installed-policy writer and checks the running filter with loopback DNS.
+
+With a trusted pairing service configured for an installation, open **Blocked sites**, choose **Request removal** on a rule, and follow the request status in the same window. The installer accepts `--partner-config PATH` pointing to a JSON object with the HTTPS `origin` and `ownerKey` for that pairing. The installed copy is root-only. The pairing service can be started behind a trusted TLS reverse proxy with `--public-origin` set to the same HTTPS origin. The proxy must pass that origin's host to the service. For the menu-bar app's **Partner settings**, set `CLEARPATH_PARTNER_ORIGIN` to that origin and `CLEARPATH_PARTNER_STATE` to a private client directory containing its matching `owner-key` file. Keep the server database and mail sink under the trusted service operator's control. Hosted deployment and external delivery are tracked in #24.
+
 ## Run locally
 
-Python 3.9+ and a virtual environment are required; macOS does not guarantee a bundled Python. Python is an experiment harness, not the proposed shipping runtime.
+Python 3.9+ and a virtual environment are required. The Swift filter is the native runtime, and the Python DNS implementation is an experiment harness.
 
 ```sh
 python3 -m venv .venv

@@ -224,7 +224,7 @@ final class CommunityListTests: XCTestCase {
     }
 }
 
-private final class CommunityHTTP {
+final class CommunityHTTP {
     private final class Replies {
         var requests: [String] = []
         var response = Data()
@@ -259,7 +259,7 @@ private final class CommunityHTTP {
     func stop() { server.stop() }
 }
 
-private final class CommunityLoopback {
+final class CommunityLoopback {
     let queue = DispatchQueue(label: "io.clearpath.tests.community-fixture")
     let port: NWEndpoint.Port
     private let listener: NWListener

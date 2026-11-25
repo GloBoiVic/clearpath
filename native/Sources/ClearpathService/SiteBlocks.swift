@@ -22,6 +22,7 @@ extension ServiceManager {
         try withServiceLock {
             let policy = try installedPolicy()
             guard !policy.custom.contains(domain) else { return }
+            try retireRemovedCustomRule(domain)
             // Keep the spelling and order of the existing rules. Validate the complete
             // candidate before atomically replacing the policy from the same directory.
             do {
@@ -60,10 +61,12 @@ extension ServiceManager {
 
 @objc protocol SiteBlockRequest {
     func add(_ domain: String, reply: @escaping (String?, String?) -> Void)
+    func requestRemoval(_ domain: String, rule: String, reply: @escaping (String?, String?) -> Void)
+    func listRemovals(reply: @escaping (String?, String?) -> Void)
 }
 
-/// The system Mach service grants the current console user one operation on the
-/// installed policy. The caller supplies a domain, never a path or a policy document.
+/// The current console user can add blocks and ask for removals. Only an
+/// independently verified decision can relax installed policy.
 public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
     private let manager: ServiceManager
     private let consoleUser: () -> uid_t?
@@ -83,6 +86,14 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
         let listener = NSXPCListener(machServiceName: ServicePaths.siteBlockLabel)
         listener.delegate = delegate
         listener.resume()
+        Task {
+            while !Task.isCancelled {
+                if let client = try? manager.removalClient() {
+                    await manager.reconcileSiteRemovals(client: client)
+                }
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
         withExtendedLifetime((delegate, listener)) { dispatchMain() }
     }
 
@@ -114,6 +125,35 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
                 reply(nil, "Clearpath could not save the site block.")
             }
         }
+
+        func requestRemoval(_ domain: String, rule: String, reply: @escaping (String?, String?) -> Void) {
+            guard authorized(), let rule = RemovalRule(rawValue: rule) else {
+                reply(nil, "Clearpath could not accept the site removal request.")
+                return
+            }
+            do {
+                _ = try manager.removalClient()
+                try manager.requestSiteRemoval(domain, rule: rule)
+                reply("", nil)
+            } catch ServiceError.refused(let message) {
+                reply(nil, message)
+            } catch {
+                reply(nil, "Clearpath could not save the site removal request.")
+            }
+        }
+
+        func listRemovals(reply: @escaping (String?, String?) -> Void) {
+            guard authorized() else { reply(nil, "Sign in to this Mac to see requests."); return }
+            do {
+                _ = try manager.removalClient()
+                let data = try JSONEncoder().encode(manager.readSiteRemovals())
+                reply(String(decoding: data, as: UTF8.self), nil)
+            } catch ServiceError.refused(let message) {
+                reply(nil, message)
+            } catch {
+                reply(nil, "Clearpath could not load site removal requests.")
+            }
+        }
     }
 
     public static func add(_ domain: String) throws -> String {
@@ -123,6 +163,24 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
 
     static func add(_ domain: String, over connection: NSXPCConnection) throws -> String {
         guard domain.utf8.count <= 1024 else { throw ServiceError.refused("Enter a domain such as example.com.") }
+        return try call(over: connection) { $0.add(domain, reply: $1) }
+    }
+
+    public static func requestRemoval(_ domain: String, rule: String) throws {
+        guard domain.utf8.count <= 1024, RemovalRule(rawValue: rule) != nil else {
+            throw ServiceError.refused("Select a site block to remove.")
+        }
+        let connection = NSXPCConnection(machServiceName: ServicePaths.siteBlockLabel, options: .privileged)
+        _ = try call(over: connection) { $0.requestRemoval(domain, rule: rule, reply: $1) }
+    }
+
+    public static func listRemovals() throws -> String {
+        let connection = NSXPCConnection(machServiceName: ServicePaths.siteBlockLabel, options: .privileged)
+        return try call(over: connection) { $0.listRemovals(reply: $1) }
+    }
+
+    private static func call(over connection: NSXPCConnection,
+                             _ invoke: (SiteBlockRequest, @escaping (String?, String?) -> Void) -> Void) throws -> String {
         connection.remoteObjectInterface = NSXPCInterface(with: SiteBlockRequest.self)
         connection.resume()
         defer { connection.invalidate() }
@@ -132,7 +190,7 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
             result = .failure(.failed("The installed site-block service is unavailable. Check Set up protection."))
             finished.signal()
         } as! SiteBlockRequest
-        proxy.add(domain) { saved, message in
+        invoke(proxy) { saved, message in
             if let saved {
                 result = .success(saved)
             } else {

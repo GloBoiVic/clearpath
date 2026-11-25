@@ -16,12 +16,15 @@ public struct ServicePaths: Sendable {
     public var recovery: URL { supportDirectory.appendingPathComponent("recovery.json") }
     var internetRecovery: URL { supportDirectory.appendingPathComponent("internet-recovery.json") }
     var communityListStatus: URL { supportDirectory.appendingPathComponent("community-list.json") }
+    var removalConfig: URL { supportDirectory.appendingPathComponent("partner-service.json") }
+    var siteRemovals: URL { supportDirectory.appendingPathComponent("site-removals.json") }
     public var daemonPlist: URL { root.appendingPathComponent("Library/LaunchDaemons/\(Self.label).plist") }
     var siteBlockPlist: URL { daemonPlist.deletingLastPathComponent().appendingPathComponent("\(Self.siteBlockLabel).plist") }
     var communityListPlist: URL { daemonPlist.deletingLastPathComponent().appendingPathComponent("\(Self.communityListLabel).plist") }
     /// Clearpath's files only, in removal order: the recovery record goes last.
     var owned: [URL] {
-        [communityListPlist, siteBlockPlist, daemonPlist, filter, controlTool, policy, communityListStatus, internetRecovery, recovery]
+        [communityListPlist, siteBlockPlist, daemonPlist, filter, controlTool, policy, communityListStatus,
+         removalConfig, siteRemovals, internetRecovery, recovery]
     }
 }
 
@@ -91,7 +94,8 @@ public final class ServiceManager {
 
     // MARK: Install
 
-    public func install(filter: URL, policy: URL, upstream: String?, upstreamPort: UInt16, controlTool: URL? = nil) throws {
+    public func install(filter: URL, policy: URL, upstream: String?, upstreamPort: UInt16,
+                        controlTool: URL? = nil, partnerConfig: URL? = nil) throws {
         guard system.isRoot else { throw ServiceError.refused("Install must run as root (sudo).") }
         let fm = FileManager.default
         guard !fm.fileExists(atPath: paths.recovery.path), !fm.fileExists(atPath: paths.daemonPlist.path),
@@ -102,6 +106,8 @@ public final class ServiceManager {
         guard fm.isExecutableFile(atPath: filter.path) else { throw ServiceError.refused("The filter at \(filter.path) is not executable.") }
         let policyData = try readRegularFile(policy, what: "policy")
         let controlData = try controlTool.map { try readRegularFile($0, what: "service tool") }
+        let configData = try partnerConfig.map { try readRegularFile($0, what: "pairing configuration") }
+        if let configData { _ = try decodeRemovalConfiguration(configData).client() }
         do { _ = try Policy(data: policyData) } catch { throw ServiceError.refused("Policy rejected: \(error).") }
         guard upstreamPort > 0 else { throw ServiceError.refused("--upstream-port must be 1-65535.") }
         guard system.portIsFree(Self.listenPort) else {
@@ -135,7 +141,8 @@ public final class ServiceManager {
         try withServiceLock {
             guard !fm.fileExists(atPath: paths.daemonPlist.path), !fm.fileExists(atPath: paths.siteBlockPlist.path),
                   !fm.fileExists(atPath: paths.communityListPlist.path), !fm.fileExists(atPath: paths.communityListStatus.path),
-                  !fm.fileExists(atPath: paths.internetRecovery.path) else {
+                  !fm.fileExists(atPath: paths.internetRecovery.path), !fm.fileExists(atPath: paths.removalConfig.path),
+                  !fm.fileExists(atPath: paths.siteRemovals.path) else {
                 throw ServiceError.refused("An earlier Clearpath install is present. Run uninstall first.")
             }
             try writeFile(try Self.encoder.encode(record), to: paths.recovery, mode: 0o644, exclusive: true)
@@ -146,6 +153,7 @@ public final class ServiceManager {
                 try writeFile(filterData, to: paths.filter, mode: 0o755)
                 if let controlData { try writeFile(controlData, to: paths.controlTool, mode: 0o755) }
                 try writeFile(policyData, to: paths.policy, mode: 0o644)
+                if let configData { try writeFile(configData, to: paths.removalConfig, mode: 0o600, exclusive: true) }
                 try makeDirectory(paths.daemonPlist.deletingLastPathComponent())
                 try writeFile(try daemonPlist(upstream: upstream, upstreamPort: upstreamPort), to: paths.daemonPlist, mode: 0o644)
                 try check(system.run(.launchctl, ["bootstrap", "system", paths.daemonPlist.path]), "launchctl bootstrap")
@@ -153,7 +161,7 @@ public final class ServiceManager {
                     throw ServiceError.failed("The filter did not answer on \(Self.listenAddress):\(Self.listenPort) within \(Int(Self.readyTimeout)) seconds.")
                 }
                 if controlData != nil {
-                    try writeFile(try siteBlockPlist(), to: paths.siteBlockPlist, mode: 0o644)
+                    try writeFile(try siteBlockPlist(reconcileRemovals: configData != nil), to: paths.siteBlockPlist, mode: 0o644)
                     try check(system.run(.launchctl, ["bootstrap", "system", paths.siteBlockPlist.path]), "launchctl bootstrap site-block service")
                 }
                 log("Filter answering on \(Self.listenAddress):\(Self.listenPort).")
@@ -349,11 +357,13 @@ public final class ServiceManager {
         return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
     }
 
-    private func siteBlockPlist() throws -> Data {
+    private func siteBlockPlist(reconcileRemovals: Bool) throws -> Data {
         let plist: [String: Any] = [
             "Label": ServicePaths.siteBlockLabel,
             "ProgramArguments": [paths.controlTool.path, "serve-site-blocks"],
             "MachServices": [ServicePaths.siteBlockLabel: true],
+            "RunAtLoad": reconcileRemovals,
+            "KeepAlive": reconcileRemovals,
         ]
         return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
     }
