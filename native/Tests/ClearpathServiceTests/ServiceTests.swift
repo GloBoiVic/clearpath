@@ -371,14 +371,13 @@ final class ServiceTests: XCTestCase {
         try Data("{\"origin\":\"https://example.test\",\"ownerKey\":\"\(key)\"}".utf8).write(to: config)
         try manager.install(filter: filter, policy: policy, upstream: "192.0.2.10", upstreamPort: 53, partnerConfig: config)
         let stage = try stageApplication()
-        mac.loginItemRemovable = false
-        XCTAssertThrowsError(try uninstallApplication(stage))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.application.path))
-        mac.loginItemRemovable = true
+        XCTAssertEqual(try manager.pairingClient().origin.host, "example.test")
+        mac.installedProfiles = [["ProfileIdentifier": BrowserProfile.identifier, "ProfileUUID": BrowserProfile.uuid]]
+        mac.profileRemovable = false
 
-        let collision = stage.appendingPathComponent("RemovedClearpath.app")
-        try FileManager.default.createDirectory(at: collision, withIntermediateDirectories: false)
-        XCTAssertThrowsError(try uninstallApplication(stage))
+        XCTAssertEqual(try uninstallApplication(stage), .removeBrowserProfile)
+        XCTAssertEqual(mac.dns, original)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.application.path))
         let pending = try FileManager.default.contentsOfDirectory(at: paths.pendingUninstallEvents, includingPropertiesForKeys: nil)
         let eventFile = try XCTUnwrap(pending.first)
         let event = try Data(contentsOf: eventFile)
@@ -387,7 +386,19 @@ final class ServiceTests: XCTestCase {
         XCTAssertFalse(String(decoding: event, as: UTF8.self).contains(key))
         XCTAssertFalse(String(decoding: event, as: UTF8.self).contains("example.test"))
         XCTAssertTrue(String(decoding: event, as: UTF8.self).contains("uninstalledWithoutApproval"))
+        let restarted = ServiceManager(paths: paths, system: mac, log: { _ in })
+        XCTAssertThrowsError(try restarted.pairingClient(), "a restarted job must not resume partner check-ins")
 
+        mac.installedProfiles = []
+        mac.loginItemRemovable = false
+        XCTAssertThrowsError(try uninstallApplication(stage))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.application.path))
+        XCTAssertEqual(try Data(contentsOf: eventFile), event)
+        mac.loginItemRemovable = true
+
+        let collision = stage.appendingPathComponent("RemovedClearpath.app")
+        try FileManager.default.createDirectory(at: collision, withIntermediateDirectories: false)
+        XCTAssertThrowsError(try uninstallApplication(stage))
         try FileManager.default.removeItem(at: collision)
         XCTAssertEqual(try uninstallApplication(stage), .removed)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: paths.pendingUninstallEvents.path), [eventFile.lastPathComponent])

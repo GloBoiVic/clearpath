@@ -236,14 +236,20 @@ public final class ServiceManager {
         try withServiceLock { try uninstallLocked() }
     }
 
-    func uninstallLocked(beforeRemovingFiles: () throws -> Void = {}, finish: () throws -> Void = {}) throws {
-        if let record = try readRecord() {
-            try restoreOriginalDNS(record)
-            try waitForRestoredResolver()
+    func uninstallLocked(prepare: () throws -> Void = {}, beforeRemovingFiles: () throws -> Void = {},
+                         finish: () throws -> Void = {}) throws {
+        let record = try readRecord()
+        if let record {
+            _ = try recoveryLocation(record)
         } else if let stuck = try readServices().first(where: { $0.servers.contains(Self.listenAddress) }),
                   try (FileManager.default.fileExists(atPath: paths.daemonPlist.path) || uninstallJobIsLoaded(ServicePaths.label)) {
             // Without the record the original setting is unknown, and stopping the daemon would cut DNS.
             throw ServiceError.refused("The recovery record is missing and \(stuck.name) still uses \(Self.listenAddress). Set its DNS back by hand first (networksetup -setdnsservers \"\(stuck.name)\" Empty for automatic).")
+        }
+        try prepare()
+        if let record {
+            try restoreOriginalDNS(record)
+            try waitForRestoredResolver()
         }
         for label in [ServicePaths.communityListLabel, ServicePaths.siteBlockLabel, ServicePaths.label] where try uninstallJobIsLoaded(label) {
             let result = try system.run(.launchctl, ["bootout", "system/\(label)"])

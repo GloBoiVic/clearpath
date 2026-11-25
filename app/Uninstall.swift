@@ -37,6 +37,7 @@ struct UninstallView: View {
             }
             if manualProfile {
                 Section("Remove the browser profile") {
+                    Text("Your previous DNS settings are restored. Remove the browser profile to finish uninstalling.")
                     Text("In System Settings → General → Device Management, select Clearpath Browser Policies and click Remove. Then return here and choose Check profile and continue.")
                     Text("Profile identifier: io.clearpath.browser-policy.v1").textSelection(.enabled).foregroundStyle(.secondary)
                 }
@@ -82,13 +83,14 @@ enum UninstallLoginItem {
 
     /// The privileged helper invokes this in the signed-in user's GUI session, before taking the app away.
     static func run() -> Int32 {
-        guard getuid() != 0, geteuid() == getuid(), SetupInstaller.runningFromApplications else { return 1 }
+        guard getuid() != 0, geteuid() == getuid(), SetupInstaller.runningFromApplications,
+              let domain = Bundle.main.bundleIdentifier else { return 1 }
         let item = SetupInstaller.loginItem
         do { try item.unregister() } catch {
             guard item.status == .notRegistered || item.status == .notFound else { return 1 }
         }
         guard item.status == .notRegistered || item.status == .notFound else { return 1 }
-        UserDefaults.standard.removeObject(forKey: "soloSetupComplete")
+        UserDefaults.standard.removePersistentDomain(forName: domain)
         print("unregistered")
         return 0
     }

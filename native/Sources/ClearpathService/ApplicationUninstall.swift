@@ -31,10 +31,15 @@ extension ServiceManager {
         do {
             try withServiceLock {
                 let application = try verifiedApplication(codeHash: codeHash)
-                try uninstallLocked(beforeRemovingFiles: {
+                try uninstallLocked(prepare: {
+                    try queueUninstallEvent(reason)
+                    // A reboot during removal must not let an installed check-in job report in again.
+                    guard unlink(paths.partnerConfig.path) == 0 || errno == ENOENT else {
+                        throw ServiceError.failed("Clearpath couldn’t remove the local partner configuration.")
+                    }
+                }, beforeRemovingFiles: {
                     try removeBrowserProfile()
                     try unregisterLoginItem(consoleUID)
-                    try queueUninstallEvent(reason)
                 }, finish: {
                     let current = try verifiedApplication(codeHash: codeHash)
                     guard current.st_dev == application.st_dev, current.st_ino == application.st_ino else {
