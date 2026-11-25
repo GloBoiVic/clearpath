@@ -31,6 +31,10 @@
     "finish": "Finish setup",
     "complete": "Setup complete. Removing a block or changing an accepted partner now needs partner approval or a 7-day wait."
   },
+  "missedCheckIn": {
+    "subject": "Clearpath hasn't checked in",
+    "body": "This Mac hasn't checked in for 24 hours. The Mac may simply be off. Please check in with the person you support."
+  },
   "change": {
     "subject": "Clearpath partner change request",
     "request": "Clearpath received a request to replace the {role} partner {current} with {email}.\nOpen the link to confirm your decision within seven days. If nobody responds, Clearpath will apply the change.",

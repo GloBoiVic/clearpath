@@ -86,9 +86,10 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
         let listener = NSXPCListener(machServiceName: ServicePaths.siteBlockLabel)
         listener.delegate = delegate
         listener.resume()
+        Task { await PairingClient.sendCheckIns(client: manager.pairingClient) }
         Task {
             while !Task.isCancelled {
-                if let client = try? manager.removalClient() {
+                if let client = try? manager.pairingClient() {
                     await manager.reconcileSiteRemovals(client: client)
                 }
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
@@ -132,7 +133,7 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
                 return
             }
             do {
-                _ = try manager.removalClient()
+                _ = try manager.pairingClient()
                 try manager.requestSiteRemoval(domain, rule: rule)
                 reply("", nil)
             } catch ServiceError.refused(let message) {
@@ -145,7 +146,7 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
         func listRemovals(reply: @escaping (String?, String?) -> Void) {
             guard authorized() else { reply(nil, "Sign in to this Mac to see requests."); return }
             do {
-                _ = try manager.removalClient()
+                _ = try manager.pairingClient()
                 let data = try JSONEncoder().encode(manager.readSiteRemovals())
                 reply(String(decoding: data, as: UTF8.self), nil)
             } catch ServiceError.refused(let message) {

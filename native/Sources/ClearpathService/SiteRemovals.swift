@@ -20,45 +20,7 @@ struct SiteRemoval: Codable {
     var finished: Bool { applied || outcome == .denied }
 }
 
-struct RemovalConfiguration: Decodable {
-    let origin: String
-    let ownerKey: String
-
-    func client(allowFixtureHTTP: Bool = false) throws -> RemovalClient {
-        guard let parts = URLComponents(string: origin), let url = parts.url,
-              let host = parts.host, !host.isEmpty, parts.user == nil, parts.password == nil,
-              parts.path.isEmpty, parts.query == nil, parts.fragment == nil,
-              parts.scheme == "https" || (allowFixtureHTTP && parts.scheme == "http" && host == "127.0.0.1"),
-              ownerKey.utf8.count == 43,
-              ownerKey.utf8.allSatisfy({ (65...90).contains($0) || (97...122).contains($0) ||
-                                        (48...57).contains($0) || $0 == 45 || $0 == 95 }) else {
-            throw ServiceError.refused("The pairing service configuration is invalid.")
-        }
-        return RemovalClient(origin: url, ownerKey: ownerKey)
-    }
-}
-
-struct RemovalClient {
-    let origin: URL
-    let ownerKey: String
-
-    private final class NoRedirects: NSObject, URLSessionTaskDelegate {
-        func urlSession(_ session: URLSession, task: URLSessionTask,
-                        willPerformHTTPRedirection response: HTTPURLResponse,
-                        newRequest request: URLRequest,
-                        completionHandler: @escaping (URLRequest?) -> Void) {
-            completionHandler(nil)
-        }
-    }
-
-    private static let session: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 5
-        configuration.timeoutIntervalForResource = 5
-        configuration.connectionProxyDictionary = [:]
-        return URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
-    }()
-
+extension PairingClient {
     func outcome(for removal: SiteRemoval) async throws -> RemovalOutcome {
         struct Reply: Decodable {
             let id: UUID
@@ -68,8 +30,7 @@ struct RemovalClient {
 
         let id = removal.id.uuidString.lowercased()
         let endpoint = origin.appendingPathComponent("requests").appendingPathComponent("site-removal")
-        var request = URLRequest(url: removal.submitted ? endpoint.appendingPathComponent(id) : endpoint)
-        request.setValue("Bearer \(ownerKey)", forHTTPHeaderField: "Authorization")
+        var request = authorizedRequest(to: removal.submitted ? endpoint.appendingPathComponent(id) : endpoint)
         if !removal.submitted {
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -86,27 +47,6 @@ struct RemovalClient {
 }
 
 extension ServiceManager {
-    func removalClient() throws -> RemovalClient {
-        let fd = open(paths.removalConfig.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
-        guard fd >= 0 else {
-            throw ServiceError.refused("Site removal requests need a configured pairing service.")
-        }
-        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-        var info = stat()
-        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
-              info.st_uid == geteuid(), info.st_mode & 0o077 == 0, info.st_size <= 4096 else {
-            throw ServiceError.refused("The pairing service configuration is invalid.")
-        }
-        return try decodeRemovalConfiguration(handle.read(upToCount: 4097) ?? Data()).client()
-    }
-
-    func decodeRemovalConfiguration(_ data: Data) throws -> RemovalConfiguration {
-        guard data.count <= 4096, let config = try? JSONDecoder().decode(RemovalConfiguration.self, from: data) else {
-            throw ServiceError.refused("The pairing service configuration is invalid.")
-        }
-        return config
-    }
-
     func requestSiteRemoval(_ input: String, rule: RemovalRule) throws {
         guard system.isRoot else { throw ServiceError.refused("The installed policy writer must run as root.") }
         guard input.utf8.count <= 1024, let domain = try? Policy.domain(input) else {
@@ -171,7 +111,7 @@ extension ServiceManager {
     /// The client never supplies a verdict to the privileged service. Cache an
     /// authenticated terminal decision before touching DNS policy so it can be
     /// applied safely after an interruption, even while the service is offline.
-    func reconcileSiteRemovals(client: RemovalClient) async {
+    func reconcileSiteRemovals(client: PairingClient) async {
         guard system.isRoot, let pending = try? readSiteRemovals().filter({ !$0.finished }) else { return }
         for removal in pending {
             do {

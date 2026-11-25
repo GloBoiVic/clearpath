@@ -44,11 +44,16 @@ final class SiteRemovalTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: paths.recovery.path))
         try configure("https://pairing.example.test")
         try install(upstreamPort: 1053, config: config)
-        let attributes = try FileManager.default.attributesOfItem(atPath: paths.removalConfig.path)
+        let attributes = try FileManager.default.attributesOfItem(atPath: paths.partnerConfig.path)
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
-        XCTAssertEqual(try manager.removalClient().origin.host, "pairing.example.test")
+        XCTAssertEqual(try manager.pairingClient().origin.host, "pairing.example.test")
+        let job = try XCTUnwrap(PropertyListSerialization.propertyList(
+            from: Data(contentsOf: paths.siteBlockPlist), options: [], format: nil) as? [String: Any])
+        XCTAssertEqual(job["RunAtLoad"] as? Bool, true)
+        XCTAssertEqual(job["KeepAlive"] as? Bool, true)
         try manager.uninstall()
-        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.removalConfig.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.partnerConfig.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.siteBlockPlist.path))
     }
 
     func test_real_partner_decisions_reach_the_running_filter_after_restart_and_refresh() async throws {
@@ -179,7 +184,7 @@ private func stopProcess(_ process: Process) {
     process.waitUntilExit()
 }
 
-private final class PairingFixture {
+final class PairingFixture {
     private var process: Process?
     private let state: URL
     private let clock: URL
@@ -196,8 +201,8 @@ private final class PairingFixture {
         try restart()
     }
 
-    var client: RemovalClient {
-        get throws { try RemovalConfiguration(origin: origin, ownerKey: key).client(allowFixtureHTTP: true) }
+    var client: PairingClient {
+        get throws { try PairingConfiguration(origin: origin, ownerKey: key).client(allowFixtureHTTP: true) }
     }
 
     func setClock(_ now: Int) throws {
@@ -256,8 +261,33 @@ private final class PairingFixture {
         try await request(path, body: form, contentType: "application/x-www-form-urlencoded")
     }
 
+    func checkInRevision() async throws -> UUID {
+        let (status, data) = try await response("/check-in", owner: true)
+        XCTAssertEqual(status, 200)
+        let json = try JSONDecoder().decode([String: UUID].self, from: data)
+        return try XCTUnwrap(json["revision"])
+    }
+
+    func advance() async throws {
+        let status = try await request("/partners", owner: true)
+        XCTAssertEqual(status, 200)
+    }
+
+    func missedCheckInMail() throws -> [URL] {
+        let mail = state.appendingPathComponent("mail")
+        let batches = try FileManager.default.contentsOfDirectory(at: mail, includingPropertiesForKeys: nil)
+        return try batches.filter { $0.lastPathComponent.hasPrefix("check-in-") }.flatMap {
+            try FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)
+        }
+    }
+
     private func request(_ path: String, body: String? = nil,
                          contentType: String? = nil, owner: Bool = false) async throws -> Int {
+        try await response(path, body: body, contentType: contentType, owner: owner).0
+    }
+
+    private func response(_ path: String, body: String? = nil,
+                          contentType: String? = nil, owner: Bool) async throws -> (Int, Data) {
         var request = URLRequest(url: try XCTUnwrap(URL(string: origin + path)), timeoutInterval: 3)
         if owner { request.setValue("Bearer " + (try key), forHTTPHeaderField: "Authorization") }
         if let body {
@@ -265,7 +295,7 @@ private final class PairingFixture {
             request.httpBody = Data(body.utf8)
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         }
-        let (_, response) = try await URLSession.shared.data(for: request)
-        return try XCTUnwrap((response as? HTTPURLResponse)?.statusCode)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        return (try XCTUnwrap((response as? HTTPURLResponse)?.statusCode), data)
     }
 }

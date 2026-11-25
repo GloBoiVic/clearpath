@@ -30,6 +30,10 @@ Run `swift test --package-path native --scratch-path artifacts/native-build --fi
 
 With a trusted pairing service configured for an installation, open **Blocked sites**, choose **Request removal** on a rule, and follow the request status in the same window. The installer accepts `--partner-config PATH` pointing to a JSON object with the HTTPS `origin` and `ownerKey` for that pairing. The installed copy is root-only. The pairing service can be started behind a trusted TLS reverse proxy with `--public-origin` set to the same HTTPS origin. The proxy must pass that origin's host to the service. For the menu-bar app's **Partner settings**, set `CLEARPATH_PARTNER_ORIGIN` to that origin and `CLEARPATH_PARTNER_STATE` to a private client directory containing its matching `owner-key` file. Keep the server database and mail sink under the trusted service operator's control. Hosted deployment and external delivery are tracked in #24.
 
+### Test missed check-in alerts
+
+With the same pairing configuration, the installed background service checks in at startup and hourly, even when the menu-bar app is closed. After 24 hours without a check-in, the pairing service alerts accepted partners once per outage. A successful check-in starts a fresh window. Run `swift test --package-path native --scratch-path artifacts/native-build --filter PartnerCheckInTests` to exercise the worker, a fixture clock and the local mail sink without installing a system service.
+
 ## Run locally
 
 Python 3.9+ and a virtual environment are required. The Swift filter is the native runtime, and the Python DNS implementation is an experiment harness.
