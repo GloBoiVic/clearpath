@@ -24,28 +24,37 @@ extension ServiceManager {
             guard !policy.custom.contains(domain) else { return }
             // Keep the spelling and order of the existing rules. Validate the complete
             // candidate before atomically replacing the policy from the same directory.
-            guard var document = try JSONSerialization.jsonObject(with: policy.data) as? [String: Any],
-                  var custom = document["custom"] as? [String] else { throw PolicyError.invalidSchema }
-            custom.append(domain)
-            document["custom"] = custom
-            let data = try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys])
             do {
-                _ = try Policy(data: data)
+                try updateInstalledPolicy(policy) { document in
+                    guard var custom = document["custom"] as? [String] else { throw PolicyError.invalidSchema }
+                    custom.append(domain)
+                    document["custom"] = custom
+                }
             } catch PolicyError.tooLarge {
                 throw ServiceError.refused("The installed policy is too large to add another site.")
             }
-            try writeFile(data, to: paths.policy, mode: 0o644)
         }
         return domain
     }
 
-    private func installedPolicy() throws -> Policy {
+    func installedPolicy() throws -> Policy {
         guard try readRecord() != nil else { throw ServiceError.refused("The Clearpath filter service is not installed.") }
         do {
             return try Policy(file: paths.policy)
         } catch {
             throw ServiceError.refused("The installed policy could not be read or is invalid.")
         }
+    }
+
+    /// Call with the service lock held. Every writer validates the entire staged policy.
+    func updateInstalledPolicy(_ policy: Policy, editing: (inout [String: Any]) throws -> Void) throws {
+        guard var document = try JSONSerialization.jsonObject(with: policy.data) as? [String: Any] else {
+            throw PolicyError.invalidSchema
+        }
+        try editing(&document)
+        let data = try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys])
+        _ = try Policy(data: data)
+        try writeFile(data, to: paths.policy, mode: 0o644)
     }
 }
 

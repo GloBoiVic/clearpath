@@ -86,6 +86,8 @@ If installation fails, it rolls itself back. `uninstall` restores DNS from the r
 
 **Block a site** saves a custom rule through the installed service with no restart. The rule covers the domain and its subdomains. **Blocked sites** shows custom rules, adult list rules, and adult list exceptions. The same operations are available as `clearpath-service block-site example.com` and `clearpath-service blocked-sites`. An older installation needs the updated service before it can accept additions. When reinstalling in a disposable VM, keep a copy of the installed policy first so you can use it as the new installation’s input.
 
+**Community blocklist.** New service installations check for a HaGeZi NSFW list refresh at startup and hourly, including after sleep. The service downloads only when seven days have passed since its last successful check. A failed refresh keeps the installed rules and retries at the next check. `clearpath-service status` reports the last successful check and source version under `communityList`. Existing installations need the updated service installed before automatic refresh begins. [HaGeZi NSFW domains](https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/nsfw-onlydomains.txt) · [GPLv3 license](https://github.com/hagezi/dns-blocklists/blob/main/LICENSE)
+
 ### Browser setup (disposable VM only)
 
 After installing the filter with your DNS policy, open **Set up protection** from the shield menu and choose **Check DNS status**. This checks the filter and the Mac's DNS settings. For Safari, turn off iCloud Private Relay if it’s on. [Apple’s Private Relay instructions](https://support.apple.com/guide/mac-help/mchlecadabe0/mac)

@@ -11,6 +11,7 @@ usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--
        clearpath-service status
        clearpath-service blocked-sites
        clearpath-service block-site DOMAIN
+       clearpath-service refresh-community-list
        clearpath-service browser-profile
   install records every network service's DNS, starts the filter on 127.0.0.1:53 and points DNS at it.
   Without --upstream it follows the Mac's current default and supplemental DNS resolvers.
@@ -18,6 +19,7 @@ usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--
   uninstall restores the recorded DNS, then stops the filter and removes only Clearpath's files.
   blocked-sites prints the installed block rules and their exceptions as JSON.
   block-site adds a custom block through the installed local service.
+  refresh-community-list checks the weekly community list schedule as root.
   browser-profile writes Clearpath's removable Chrome and Firefox profile to standard output.
 
 """
@@ -83,6 +85,9 @@ case "block-site":
 case "serve-site-blocks":
     guard arguments.isEmpty else { fail(usage, code: 2) }
     run { try SiteBlockControl.serve(manager: manager) }
+case "refresh-community-list":
+    guard arguments.isEmpty else { fail(usage, code: 2) }
+    run { try manager.refreshCommunityList() }
 case "browser-profile":
     guard arguments.isEmpty else { fail(usage, code: 2) }
     run {

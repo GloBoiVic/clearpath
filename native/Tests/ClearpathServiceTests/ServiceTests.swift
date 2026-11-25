@@ -30,6 +30,8 @@ final class FakeMac: SystemControl {
     var loaded = false
     var siteBlockJobLoaded = false
     var siteBlockJobStarts = true
+    var communityListJobLoaded = false
+    var communityListJobStarts = true
     var filterStarts = true
     var portFree = true
     var ignoreSetFor: String?
@@ -62,6 +64,11 @@ final class FakeMac: SystemControl {
         case (.scutil, _):
             return CommandResult(status: 0, output: resolverState)
         case (.launchctl, "bootstrap"):
+            if arguments[2].hasSuffix("/\(ServicePaths.communityListLabel).plist") {
+                guard communityListJobStarts else { return CommandResult(status: 1, output: "bootstrap failed") }
+                communityListJobLoaded = true
+                return CommandResult(status: 0, output: "")
+            }
             if arguments[2].hasSuffix("/\(ServicePaths.siteBlockLabel).plist") {
                 guard siteBlockJobStarts else { return CommandResult(status: 1, output: "bootstrap failed") }
                 siteBlockJobLoaded = true
@@ -71,6 +78,10 @@ final class FakeMac: SystemControl {
             loaded = true
             return CommandResult(status: 0, output: "")
         case (.launchctl, "bootout"):
+            if arguments[1] == "system/\(ServicePaths.communityListLabel)" {
+                communityListJobLoaded = false
+                return CommandResult(status: 0, output: "")
+            }
             if arguments[1] == "system/\(ServicePaths.siteBlockLabel)" {
                 siteBlockJobLoaded = false
                 return CommandResult(status: 0, output: "")
@@ -79,6 +90,9 @@ final class FakeMac: SystemControl {
             loaded = false
             return CommandResult(status: 0, output: "")
         case (.launchctl, "print"):
+            if arguments[1] == "system/\(ServicePaths.communityListLabel)" {
+                return CommandResult(status: communityListJobLoaded ? 0 : 113, output: "")
+            }
             if arguments[1] == "system/\(ServicePaths.siteBlockLabel)" {
                 return CommandResult(status: siteBlockJobLoaded ? 0 : 113, output: "")
             }
@@ -139,6 +153,7 @@ final class ServiceTests: XCTestCase {
         XCTAssertEqual(mac.dns, original, file: file, line: line)
         XCTAssertFalse(mac.loaded, file: file, line: line)
         XCTAssertFalse(mac.siteBlockJobLoaded, file: file, line: line)
+        XCTAssertFalse(mac.communityListJobLoaded, file: file, line: line)
         for url in paths.owned { XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), url.path, file: file, line: line) }
     }
 

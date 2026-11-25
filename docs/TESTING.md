@@ -169,7 +169,9 @@ Do not use an adult image appearing/not appearing as the sole test: SafeSearch i
 6. `sudo clearpath-service uninstall`: DNS matches the recorded state, no daemon, no Clearpath files, nothing on port 53.
 7. Partial installs: an install whose filter never answers rolls itself back. An install killed partway (`pkill -9 -f "clearpath-service install"`) leaves the record, files and daemon; a new install refuses, and `uninstall` restores everything.
 
-If the tool itself fails, restore each service in `/Library/Application Support/Clearpath/recovery.json` with `sudo networksetup -setdnsservers <service> <recorded servers>` (or `Empty` for automatic). Then boot out `system/io.clearpath.site-blocks` and `system/io.clearpath.filter` with `sudo launchctl bootout`. Remove their plists from `/Library/LaunchDaemons` and remove the Clearpath support directory. You can also restore the VM snapshot.
+If the tool itself fails, restore each service in `/Library/Application Support/Clearpath/recovery.json` with `sudo networksetup -setdnsservers <service> <recorded servers>` (or `Empty` for automatic). Then boot out `system/io.clearpath.community-list`, `system/io.clearpath.site-blocks` and `system/io.clearpath.filter` with `sudo launchctl bootout`. Remove their plists from `/Library/LaunchDaemons` and remove the Clearpath support directory. You can also restore the VM snapshot.
+
+The Swift suite exercises the production policy updater with a controllable clock, a loopback HTTP source and the running Swift filter on a high port with a loopback DNS upstream. The generated job schedule and uninstall are checked with the simulated Mac. The VM procedure above uses a fixture DNS upstream, so it can check job registration with `launchctl print system/io.clearpath.community-list` but cannot reach the publisher through that upstream.
 
 ### Protection health and Restore internet in the VM
 
