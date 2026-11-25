@@ -19,6 +19,24 @@
     "email": "Email",
     "failure": "Could not update invitations. Check that the pairing service is running, then refresh.",
     "invalidEmail": "Enter a synthetic address ending in @example.test.",
-    "conflict": "Invitation status changed. Refresh before making another change."
+    "conflict": "Invitation status changed. Refresh before making another change.",
+    "changeEmail": "New partner email",
+    "requestChange": "Request change",
+    "changeRule": "Changing an accepted partner needs approval from the other partner or the one being replaced, or 7 days with no answer. The replaced partner is told.",
+    "changePending": "Change requested",
+    "changeDenied": "Change denied",
+    "partners": "Partners",
+    "soloWarning": "Without a partner, nobody is told when you remove a block or undo Clearpath. You can undo Clearpath without anyone knowing.",
+    "soloAcknowledge": "I understand I can undo Clearpath without anyone knowing",
+    "finish": "Finish setup",
+    "complete": "Setup complete. Removing a block or changing an accepted partner now needs partner approval or a 7-day wait."
+  },
+  "change": {
+    "subject": "Clearpath partner change request",
+    "request": "Clearpath received a request to replace the {role} partner {current} with {email}.\nOpen the link to confirm your decision within seven days. If nobody responds, Clearpath will apply the change.",
+    "page": "Review partner change",
+    "appliedSubject": "Clearpath partner changed",
+    "replaced": "You are no longer the Clearpath {role} partner. {email} has been invited in your place.",
+    "timedOut": "Seven days passed without a decision, so Clearpath replaced the {role} partner with {email}."
   }
 }
