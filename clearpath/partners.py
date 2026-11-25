@@ -2,7 +2,6 @@
 
 import argparse
 from contextlib import closing
-from email.message import EmailMessage
 from html import escape
 from hmac import compare_digest
 from http import HTTPStatus
@@ -19,13 +18,10 @@ import tempfile
 import time
 from urllib.parse import parse_qs, urlsplit
 
-from .decisions import Decisions, TOKEN, digest, valid_domain, valid_id
-
-COPY = json.loads(Path(__file__).with_name("partner-copy.json").read_text(encoding="utf-8"))
+from .decisions import COPY, LIFETIME, Decisions, TOKEN, digest, invitation, valid_domain, valid_id
 
 
 ROLES = ("primary", "backup")
-INVITE_LIFETIME = 7 * 24 * 60 * 60
 ADDRESS = re.compile(r"[A-Za-z0-9_+%-]+(?:\.[A-Za-z0-9_+%-]+)*@example\.test")
 # Fragments stay in the browser. Only the explicit form submit sends the token.
 INVITE_SCRIPT = b"""
@@ -38,6 +34,7 @@ document.querySelector("button").disabled = !/^[A-Za-z0-9_-]{43}$/.test(token);
 
 DECISION_SCRIPT = """
 const description = document.querySelector("p");
+const form = document.querySelector("form");
 const input = document.querySelector("input");
 const buttons = document.querySelectorAll("button");
 let preview = 0;
@@ -61,10 +58,17 @@ function showRequest() {
             if (!response.ok) throw new Error();
             return response.json();
         })
-        .then(({ domain }) => {
+        .then(request => {
             if (current !== preview) return;
-            description.textContent = "Confirm your decision on the request to unblock " + domain +
-                ". The selected block covers the domain and its subdomains.";
+            if (form.dataset.kind === "site-removal" && typeof request.domain === "string") {
+                description.textContent = "Confirm your decision on the request to unblock " + request.domain +
+                    ". The selected block covers the domain and its subdomains.";
+            } else if (form.dataset.kind === "partner-change" && typeof request.email === "string") {
+                description.textContent = "Confirm your decision on the request to replace the " + request.role +
+                    " partner " + request.current + " with " + request.email + ".";
+            } else {
+                throw new Error();
+            }
             input.value = token;
             buttons.forEach(button => { button.disabled = false; });
         })
@@ -113,6 +117,19 @@ class Pairing:
                 """)
             else:
                 db.execute("SELECT role, email, revision, token_hash, expires_at FROM invites LIMIT 0")
+            # An invitation created by an approved partner change keeps the approved address.
+            if "approved" not in {column[1] for column in db.execute("PRAGMA table_info(invites)")}:
+                db.execute("ALTER TABLE invites ADD COLUMN approved INTEGER NOT NULL DEFAULT 0"
+                           " CHECK (approved IN (0, 1))")
+            # Finishing setup is recorded once and cannot be undone.
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS setup (
+                    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                    completed_at INTEGER NOT NULL,
+                    solo INTEGER NOT NULL CHECK (solo IN (0, 1))
+                )
+            """)
+            db.commit()
         self.decisions = Decisions(self.connect, self.mail, clock)
 
     def connect(self):
@@ -121,44 +138,62 @@ class Pairing:
     def status(self):
         slots = {role: {"status": "empty", "revision": 0} for role in ROLES}
         with closing(self.connect()) as db:
-            for role, email, revision, expires in db.execute(
-                "SELECT role, email, revision, expires_at FROM invites"
+            for role, email, revision, expires, approved in db.execute(
+                "SELECT role, email, revision, expires_at, approved FROM invites"
             ):
                 status = "accepted" if expires is None else (
                     "expired" if expires <= time.time() else "pending"
                 )
-                slots[role] = {"email": email, "revision": revision, "status": status}
+                slots[role] = {"email": email, "revision": revision, "status": status,
+                               "approved": bool(approved)}
+            for role, change in self.decisions.changes(db).items():
+                slots[role]["change"] = change
         return slots
+
+    def setup(self):
+        with closing(self.connect()) as db:
+            row = db.execute("SELECT solo FROM setup").fetchone()
+        return {"complete": row is not None, "solo": row is not None and bool(row[0])}
+
+    def finish_setup(self, solo):
+        """Record setup once. Solo means no partner is invited or accepted."""
+        with closing(self.connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            partnered = db.execute(
+                "SELECT 1 FROM invites WHERE expires_at IS NULL OR expires_at > ?", (time.time(),)
+            ).fetchone() is not None
+            if db.execute("SELECT 1 FROM setup").fetchone() or solo == partnered:
+                return False
+            db.execute("INSERT INTO setup VALUES (1, ?, ?)", (int(time.time()), int(solo)))
+        return True
 
     def invite(self, role, email, revision, origin):
         token = secrets.token_urlsafe(32)
         with closing(self.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             current = db.execute(
-                "SELECT revision, token_hash FROM invites WHERE role = ?", (role,)
+                "SELECT revision, token_hash, email, approved FROM invites WHERE role = ?", (role,)
             ).fetchone()
             if current is None:
                 if revision != 0:
                     return False
             elif current[0] != revision or current[1] is None:
                 return False
+            elif current[3] and (email != current[2] or self.decisions.change_open(db)):
+                # Only a new partner change can redirect an approved invitation.
+                return False
             db.execute("""
-                INSERT INTO invites VALUES (?, ?, ?, ?, ?)
+                INSERT INTO invites (role, email, revision, token_hash, expires_at) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT (role) DO UPDATE SET
                     email = excluded.email, revision = excluded.revision,
                     token_hash = excluded.token_hash, expires_at = excluded.expires_at
                 """, (role, email, revision + 1, digest(token),
-                      int(time.time()) + INVITE_LIFETIME))
+                      int(time.time()) + LIFETIME))
             self.deliver(role, email, f"{origin}/invite/{role}#{token}")
         return True
 
     def deliver(self, role, email, link):
-        message = EmailMessage()
-        message["From"] = "clearpath@example.test"
-        message["To"] = email
-        message["Subject"] = COPY["title"]
-        invitation = COPY["invited"].format(role=role)
-        message.set_content(f"{invitation}. {COPY['email']}\n\n{link}", cte="8bit")
+        message = invitation(role, email, link)
         # Publish only a complete message. If the database transaction rolls back,
         # the delivered link cannot authorize acceptance.
         with tempfile.NamedTemporaryFile(dir=self.mail, delete=False) as stream:
@@ -234,19 +269,45 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError
         return self.rfile.read(int(lengths[0])).decode("utf-8")
 
-    def role(self, prefix):
-        return next((role for role in ROLES if self.path == prefix + role), None)
+    def role(self, prefix, suffix=""):
+        return next((role for role in ROLES if self.path == prefix + role + suffix), None)
+
+    def decision_page(self, title, kind):
+        self.page(
+            HTTPStatus.OK, title,
+            '<p>Checking your decision link…</p>'
+            f'<form method="post" action="/decision/confirm" data-kind="{kind}">'
+            '<input type="hidden" name="token">'
+            '<button name="choice" value="deny" disabled>Deny</button> '
+            '<button name="choice" value="approve" disabled>Approve</button></form>'
+            '<script src="/decision.js" defer></script>',
+        )
+
+    def json_form(self, keys):
+        try:
+            form = json.loads(self.body("application/json"))
+        except RecursionError:
+            raise ValueError from None
+        if not isinstance(form, dict) or set(form) != keys:
+            raise ValueError
+        return form
 
     def do_GET(self):
         if not self.trusted_host():
             self.respond(HTTPStatus.BAD_REQUEST)
-        elif self.path == "/partners":
+        elif self.path in ("/partners", "/setup"):
             if not self.owner():
                 self.respond(HTTPStatus.UNAUTHORIZED)
                 return
+            pairing = self.server.pairing
             try:
-                data = json.dumps(self.server.pairing.status())
-            except (sqlite3.Error, KeyError):
+                if self.path == "/setup":
+                    data = json.dumps(pairing.setup())
+                else:
+                    # Apply any partner change whose seven days have passed before reporting.
+                    self.server.advance()
+                    data = json.dumps(pairing.status())
+            except (OSError, sqlite3.Error, KeyError):
                 self.respond(HTTPStatus.SERVICE_UNAVAILABLE)
                 return
             self.respond(HTTPStatus.OK, data, "application/json")
@@ -255,15 +316,9 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/decision.js":
             self.respond(HTTPStatus.OK, DECISION_SCRIPT, "text/javascript")
         elif self.path == "/decision":
-            self.page(
-                HTTPStatus.OK, "Review site removal",
-                '<p>Checking your decision link…</p>'
-                '<form method="post" action="/decision/confirm">'
-                '<input type="hidden" name="token">'
-                '<button name="choice" value="deny" disabled>Deny</button> '
-                '<button name="choice" value="approve" disabled>Approve</button></form>'
-                '<script src="/decision.js" defer></script>',
-            )
+            self.decision_page("Review site removal", "site-removal")
+        elif self.path == "/partner-change":
+            self.decision_page(COPY["change"]["page"], "partner-change")
         elif self.path.startswith("/requests/site-removal/"):
             self.removal_status(self.path.removeprefix("/requests/site-removal/"))
         elif role := self.role("/invite/"):
@@ -288,9 +343,16 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ("/decision/preview", "/decision/confirm"):
             self.submit_decision(preview=self.path.endswith("/preview"))
             return
+        if self.path == "/setup":
+            self.submit_setup()
+            return
         role = self.role("/partners/")
         if role:
             self.submit_invite(role)
+            return
+        role = self.role("/partners/", "/change")
+        if role:
+            self.submit_invite(role, change=True)
             return
         role = self.role("/invite/")
         if role:
@@ -298,19 +360,39 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.respond(HTTPStatus.NOT_FOUND)
 
-    def submit_invite(self, role):
+    def submit_setup(self):
         if not self.owner():
             self.respond(HTTPStatus.UNAUTHORIZED)
             return
         try:
-            form = json.loads(self.body("application/json"))
-            if not isinstance(form, dict) or set(form) != {"email", "revision"}:
+            solo = self.json_form({"solo"})["solo"]
+            if type(solo) is not bool:
                 raise ValueError
+            finished = self.server.pairing.finish_setup(solo)
+        except ValueError:
+            self.respond(HTTPStatus.BAD_REQUEST)
+        except sqlite3.Error:
+            self.respond(HTTPStatus.SERVICE_UNAVAILABLE)
+        else:
+            self.respond(HTTPStatus.CREATED if finished else HTTPStatus.CONFLICT)
+
+    def submit_invite(self, role, *, change=False):
+        if not self.owner():
+            self.respond(HTTPStatus.UNAUTHORIZED)
+            return
+        try:
+            form = self.json_form({"email", "revision"})
             email, revision = form["email"], form["revision"]
             if (not isinstance(email, str) or len(email) > 77 or not ADDRESS.fullmatch(email)
                     or type(revision) is not int or not 0 <= revision < 2**63 - 1):
                 raise ValueError
-            changed = self.server.pairing.invite(role, email, revision, self.server.origin)
+            pairing, origin = self.server.pairing, self.server.origin
+            if change:
+                changed = pairing.decisions.change_partner(role, email, revision, origin)
+                if changed:
+                    self.server.advance()
+            else:
+                changed = pairing.invite(role, email, revision, origin)
         except ValueError:
             self.respond(HTTPStatus.BAD_REQUEST)
         except (OSError, sqlite3.Error):
@@ -340,15 +422,14 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(HTTPStatus.UNAUTHORIZED)
             return
         try:
-            form = json.loads(self.body("application/json"))
-            if (not isinstance(form, dict) or set(form) != {"id", "domain"}
-                    or not valid_id(form["id"]) or not valid_domain(form["domain"])):
+            form = self.json_form({"id", "domain"})
+            if not valid_id(form["id"]) or not valid_domain(form["domain"]):
                 raise ValueError
             decisions = self.server.pairing.decisions
             if not decisions.submit(form["id"], form["domain"], self.server.origin):
                 self.respond(HTTPStatus.CONFLICT)
                 return
-        except (ValueError, RecursionError):
+        except ValueError:
             self.respond(HTTPStatus.BAD_REQUEST)
             return
         except sqlite3.Error:
@@ -365,7 +446,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         decisions = self.server.pairing.decisions
         try:
-            decisions.advance()
+            decisions.advance(self.server.origin)
             result = decisions.status(request_id)
         except (OSError, sqlite3.Error):
             self.respond(HTTPStatus.SERVICE_UNAVAILABLE)
@@ -390,7 +471,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
             if not preview and set(form) == {"token", "choice"}:
                 outcome = {("approve",): "approved", ("deny",): "denied"}.get(tuple(form["choice"]))
-                if outcome and decisions.decide(tokens[0], outcome):
+                if outcome and decisions.decide(tokens[0], outcome, self.server.origin):
                     self.page(HTTPStatus.OK, "Request " + outcome)
                     return
         except ValueError:
@@ -415,9 +496,16 @@ class PairingServer(HTTPServer):
         if now >= self.advance_at:
             self.advance_at = now + 30
             try:
-                self.pairing.decisions.advance()
-            except (OSError, sqlite3.Error):
-                pass  # Retry the durable outbox without logging private records.
+                self.advance()
+            except sqlite3.Error:
+                pass  # Retry without logging private records.
+
+    def advance(self):
+        """Resolve expired requests. Undelivered mail stays in the durable outbox for the next try."""
+        try:
+            self.pairing.decisions.advance(self.origin)
+        except OSError:
+            pass
 
     def handle_error(self, _request, _client_address):
         # Untrusted input and private record details stay out of service logs.

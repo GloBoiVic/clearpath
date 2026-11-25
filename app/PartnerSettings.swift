@@ -22,9 +22,31 @@ private struct InvitationSlot: Decodable {
         case empty, pending, expired, accepted
     }
 
+    /// A requested replacement of an accepted partner that has not been applied.
+    struct Change: Decodable {
+        enum Outcome: String, Decodable {
+            case pending, denied
+        }
+
+        let email: String
+        let outcome: Outcome
+    }
+
     let email: String?
     let revision: Int
     let status: Status
+    let change: Change?
+    /// The invitation came from an approved partner change, so only a new change can redirect it.
+    let approved: Bool?
+
+    var invited: Bool { status == .pending || status == .accepted }
+    /// The address can change only through a partner change request.
+    var locked: Bool { status == .accepted || approved == true }
+}
+
+private struct SetupState: Decodable {
+    let complete: Bool
+    let solo: Bool
 }
 
 private struct InvitationClient {
@@ -101,22 +123,135 @@ private struct InvitationClient {
         return slots
     }
 
-    func invite(_ role: PartnerRole, email: String, revision: Int) async throws {
+    /// Sends a new invitation to an unaccepted slot, or asks the partners to approve replacing an accepted one.
+    func invite(_ role: PartnerRole, email: String, revision: Int, change: Bool) async throws {
         struct Submission: Encodable {
             let email: String
             let revision: Int
         }
         let body = try JSONEncoder().encode(Submission(email: email, revision: revision))
-        _ = try await request("/partners/\(role.rawValue)", body: body)
+        _ = try await request("/partners/\(role.rawValue)" + (change ? "/change" : ""), body: body)
+    }
+
+    func setup() async throws -> SetupState {
+        try JSONDecoder().decode(SetupState.self, from: try await request("/setup"))
+    }
+
+    func finishSetup(solo: Bool) async throws {
+        _ = try await request("/setup", body: try JSONEncoder().encode(["solo": solo]))
+    }
+}
+
+@MainActor
+private final class PartnerModel: ObservableObject {
+    @Published var slots: [String: InvitationSlot] = [:]
+    @Published var setup: SetupState?
+    @Published var email: [PartnerRole: String] = [:]
+    @Published var busy = false
+    @Published var feedback: String?
+    private let client = InvitationClient()
+
+    /// No partner is invited or accepted, so finishing setup means going without one.
+    var solo: Bool { !slots.values.contains(where: \.invited) }
+
+    private func load() async throws {
+        slots = try await client.status()
+        setup = try await client.setup()
+        for role in PartnerRole.allCases {
+            let slot = slots[role.rawValue]
+            email[role] = slot?.locked == true ? "" : slot?.email ?? ""
+        }
+        feedback = nil
+    }
+
+    private func perform(_ action: () async throws -> Void) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            try await action()
+            try await load()
+        } catch InvitationClient.Failure.invalidEmail {
+            feedback = "invalidEmail"
+        } catch InvitationClient.Failure.conflict {
+            slots = [:]
+            setup = nil
+            feedback = "conflict"
+        } catch {
+            slots = [:]
+            setup = nil
+            feedback = "failure"
+        }
+    }
+
+    func refresh() async { await perform {} }
+
+    func submit(_ role: PartnerRole, slot: InvitationSlot) async {
+        let address = email[role] ?? ""
+        await perform {
+            try await client.invite(role, email: address, revision: slot.revision, change: slot.locked)
+        }
+    }
+
+    /// Sends an approved invitation again to the same address.
+    func resend(_ role: PartnerRole, slot: InvitationSlot) async {
+        await perform {
+            try await client.invite(role, email: slot.email ?? "", revision: slot.revision, change: false)
+        }
+    }
+
+    func finish(solo: Bool) async {
+        await perform { try await client.finishSetup(solo: solo) }
+    }
+}
+
+/// One partner's status, with the invitation or change request that fits it.
+private struct PartnerRow: View {
+    @ObservedObject var model: PartnerModel
+    let role: PartnerRole
+    let slot: InvitationSlot
+    let copy: PartnerCopy
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(copy[slot.status.rawValue], systemImage: slot.status == .accepted
+                  ? "checkmark.circle" : "envelope")
+                .foregroundStyle(.secondary)
+            if slot.locked {
+                Text(slot.email ?? "")
+            }
+            if slot.locked, slot.status != .accepted, slot.change?.outcome != .pending {
+                Button(copy[slot.status == .expired ? "send" : "replace"]) {
+                    Task { await model.resend(role, slot: slot) }
+                }
+            }
+            if let change = slot.change {
+                Label(copy[change.outcome == .pending ? "changePending" : "changeDenied"],
+                      systemImage: change.outcome == .pending ? "clock" : "xmark.circle")
+                    .foregroundStyle(.secondary)
+                Text(change.email).foregroundStyle(.secondary)
+            }
+            if slot.change?.outcome != .pending {
+                let accepted = slot.locked
+                let address = Binding(get: { model.email[role] ?? "" },
+                                      set: { model.email[role] = $0 })
+                TextField(copy[accepted ? "changeEmail" : "email"], text: address)
+                    .textContentType(.emailAddress)
+                Button(copy[accepted ? "requestChange" : slot.status == .empty ? "send" : "replace"]) {
+                    Task { await model.submit(role, slot: slot) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(address.wrappedValue.isEmpty)
+            }
+            if slot.locked {
+                Text(copy["changeRule"]).foregroundStyle(.secondary)
+            }
+        }
     }
 }
 
 struct PartnerSettings: View {
-    @State private var slots: [String: InvitationSlot] = [:]
-    @State private var email: [PartnerRole: String] = [:]
-    @State private var busy = false
-    @State private var feedback: String?
-    private let client = InvitationClient()
+    @StateObject private var model = PartnerModel()
 
     var body: some View {
         Group {
@@ -124,84 +259,64 @@ struct PartnerSettings: View {
                 Form {
                     ForEach(PartnerRole.allCases) { role in
                         Section(copy[role.rawValue]) {
-                            if let slot = slots[role.rawValue] {
-                                row(role, slot: slot, copy: copy)
+                            if let slot = model.slots[role.rawValue] {
+                                PartnerRow(model: model, role: role, slot: slot, copy: copy)
                             }
                             if role == .backup {
                                 Text(copy["recommendation"]).foregroundStyle(.secondary)
                             }
                         }
                     }
-                    if let feedback {
+                    if let feedback = model.feedback {
                         Text(copy[feedback]).foregroundStyle(.secondary)
                     }
-                    Button(copy["refresh"]) { Task { await refresh() } }
+                    Button(copy["refresh"]) { Task { await model.refresh() } }
                 }
                 .formStyle(.grouped)
-                .disabled(busy)
-                .task { await refresh() }
+                .disabled(model.busy)
+                .task { await model.refresh() }
             }
         }
         .frame(width: 440)
     }
+}
 
-    private func row(_ role: PartnerRole, slot: InvitationSlot, copy: PartnerCopy) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(copy[slot.status.rawValue], systemImage: slot.status == .accepted
-                  ? "checkmark.circle" : "envelope")
-                .foregroundStyle(.secondary)
-            if slot.status == .accepted {
-                Text(slot.email ?? "")
-            } else {
-                let address = Binding(get: { email[role] ?? "" },
-                                      set: { email[role] = $0 })
-                TextField(copy["email"], text: address)
-                    .textContentType(.emailAddress)
-                Button(copy[slot.status == .empty ? "send" : "replace"]) {
-                    let value = address.wrappedValue
-                    Task { await submit(role, email: value, slot: slot) }
+/// The Partners section of Setup: invite partners, then finish setup with or without one.
+struct SetupPartners: View {
+    @StateObject private var model = PartnerModel()
+    @State private var acknowledged = false
+
+    var body: some View {
+        if let copy = PartnerCopy.bundled {
+            Section(copy["partners"]) {
+                ForEach(PartnerRole.allCases) { role in
+                    if let slot = model.slots[role.rawValue] {
+                        Text(copy[role.rawValue]).font(.headline)
+                        PartnerRow(model: model, role: role, slot: slot, copy: copy)
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(address.wrappedValue.isEmpty)
+                Text(copy["recommendation"]).foregroundStyle(.secondary)
+                if let setup = model.setup {
+                    if setup.complete {
+                        Label(copy["complete"], systemImage: "lock")
+                    } else {
+                        Text(copy["soloWarning"]).foregroundStyle(.secondary)
+                        let solo = model.solo
+                        if solo {
+                            Toggle(copy["soloAcknowledge"], isOn: $acknowledged)
+                        }
+                        Button(copy["finish"]) { Task { await model.finish(solo: solo) } }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(solo && !acknowledged)
+                    }
+                }
+                if let feedback = model.feedback {
+                    Text(copy[feedback]).foregroundStyle(.secondary)
+                }
+                Button(copy["refresh"]) { Task { await model.refresh() } }
             }
-        }
-    }
-
-    @MainActor private func loadStatus() async throws {
-        slots = try await client.status()
-        for role in PartnerRole.allCases {
-            email[role] = slots[role.rawValue]?.email ?? ""
-        }
-        feedback = nil
-    }
-
-    @MainActor private func refresh() async {
-        guard !busy else { return }
-        busy = true
-        defer { busy = false }
-        do {
-            try await loadStatus()
-        } catch {
-            slots = [:]
-            feedback = "failure"
-        }
-    }
-
-    @MainActor private func submit(_ role: PartnerRole, email: String, slot: InvitationSlot) async {
-        guard !busy else { return }
-        busy = true
-        defer { busy = false }
-        do {
-            try await client.invite(role, email: email, revision: slot.revision)
-            try await loadStatus()
-        } catch InvitationClient.Failure.invalidEmail {
-            feedback = "invalidEmail"
-        } catch InvitationClient.Failure.conflict {
-            slots = [:]
-            feedback = "conflict"
-        } catch {
-            slots = [:]
-            feedback = "failure"
+            .disabled(model.busy)
+            .task { await model.refresh() }
         }
     }
 }
