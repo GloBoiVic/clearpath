@@ -16,6 +16,8 @@ The unit/integration suite uses local fixture servers, temporary policy files an
 
 `tests/test_swift_filter.py` builds the Swift `clearpath-filter` and runs it from a temp folder on a free loopback port against a loopback fixture upstream. It checks blocked apex and subdomains, forced Google/Bing/DuckDuckGo answers, allowed answers, HTTPS/SVCB, CNAME aliases, an unavailable safe target, silent, malformed and mismatched upstream replies, malformed client queries, TCP pipelining, IPv6, the loopback and port guards, startup refusal on a bad policy or upstream, and that no query name is logged. The Swift package tests cover the same engine in-process. This is deliberate evidence against overstating DNS-only protection.
 
+The site-block tests use a temporary installed-policy layout. The Swift service tests exercise the add-only XPC interface, peer authorization and the atomic write. The live loopback test uses the Python policy command to replace a fixture policy while the Swift filter is running, then verifies the new block, a nearby allowed name, retention of the last valid policy on a malformed update, and persistence after restarting the filter.
+
 Run the Swift command from the repo root. It uses the ignored `artifacts/` directory to avoid a Swift 6.4.2 crash when the compiler sees the same cache through both `/tmp` and `/private/tmp`.
 
 The last command type-checks every file in `app/` with the flags `build.sh` uses, so a broken menu-bar app fails Proof without building the bundle.
@@ -167,7 +169,7 @@ Do not use an adult image appearing/not appearing as the sole test: SafeSearch i
 6. `sudo clearpath-service uninstall`: DNS matches the recorded state, no daemon, no Clearpath files, nothing on port 53.
 7. Partial installs: an install whose filter never answers rolls itself back. An install killed partway (`pkill -9 -f "clearpath-service install"`) leaves the record, files and daemon; a new install refuses, and `uninstall` restores everything.
 
-Rollback if the tool itself fails: `sudo networksetup -setdnsservers <service> <recorded servers>` (or `Empty` for automatic) for each service in `/Library/Application Support/Clearpath/recovery.json`, then `sudo launchctl bootout system/io.clearpath.filter`, then remove `/Library/LaunchDaemons/io.clearpath.filter.plist` and that folder. Or restore the VM snapshot.
+If the tool itself fails, restore each service in `/Library/Application Support/Clearpath/recovery.json` with `sudo networksetup -setdnsservers <service> <recorded servers>` (or `Empty` for automatic). Then boot out `system/io.clearpath.site-blocks` and `system/io.clearpath.filter` with `sudo launchctl bootout`. Remove their plists from `/Library/LaunchDaemons` and remove the Clearpath support directory. You can also restore the VM snapshot.
 
 ### Protection health and Restore internet in the VM
 

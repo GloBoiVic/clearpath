@@ -2,7 +2,7 @@
 
 Clearpath is a free, open-source macOS app that blocks adult and NSFW websites in every browser, with an accountability partner instead of spyware. See the [product brief](docs/BRIEF.md) and [architecture](docs/ARCHITECTURE.md). Do not fork distraction-free's resolver or installer. DNS filtering works when requests reach it. Arbitrary encrypted DNS, proxies, VPNs and administrator access can bypass it. Browser setup observations and the remaining V1 acceptance cases are in [docs/RESULTS.md](docs/RESULTS.md).
 
-This repository contains a Swift DNS filter and service, an isolated Python DNS harness, and the menu-bar app. Run `./build.sh` on macOS with the Swift toolchain. The shield shows live DNS protection status and offers **Restore internet** if the installed filter stays down. **Set up protection** can check DNS and reveal the Chrome and Firefox profile. The service installer and Device Management make system changes during the disposable VM procedure. **Partner settings** can connect to a local pairing service.
+This repository contains a Swift DNS filter and service, an isolated Python DNS harness, and the menu-bar app. Run `./build.sh` on macOS with the Swift toolchain. The shield shows live DNS protection status and offers **Restore internet** if the installed filter stays down. Use **Block a site** to enter a domain or choose a shortcut, and **Blocked sites** to see the installed rules. **Set up protection** can check DNS and reveal the Chrome and Firefox profile. The service installer and Device Management make system changes during the disposable VM procedure. **Partner settings** can connect to a local pairing service.
 
 ## Try partner invitations locally
 
@@ -64,7 +64,7 @@ swift build --package-path native --scratch-path artifacts/native-build --produc
   --policy policy.example.json --upstream 1.1.1.1 --port 1053
 ```
 
-The listener accepts only `127.0.0.1` or `::1`, and port 53 or ports 1024 and up. `--user NAME` makes a filter started as root give up root once the listener is bound. `--upstream` must be an IP address; that resolver sees allowed names and safe-target lookups. An invalid policy stops startup. It does not reload the policy on SIGHUP yet; restart it after a change.
+The listener accepts only `127.0.0.1` or `::1`, and port 53 or ports 1024 and up. `--user NAME` makes a filter started as root give up root once the listener is bound. `--upstream` must be an IP address. That resolver sees allowed names and safe-target lookups. An invalid policy stops startup. The running filter checks for policy changes several times a second and keeps its last valid policy if a reload fails.
 
 ### Filter service (disposable VM only)
 
@@ -83,6 +83,8 @@ Install refuses unless it runs as root, port 53 is free, the policy is valid, an
 If installation fails, it rolls itself back. `uninstall` restores DNS from the record and checks it before stopping the daemon, then removes only Clearpath's files. It also cleans up an interrupted install and is safe to run twice. If you changed macOS network locations after installing, switch back to the installation location before running `uninstall`.
 
 **Restore internet** asks macOS for administrator approval and uses the saved DNS settings after giving the filter time to restart. It verifies the settings before showing success, which means DNS filtering is off. Retry the same action if it was interrupted. The service and saved configuration stay installed. `status` exposes a local restore event for future partner delivery. An installation made with an older service tool lacks the helper for the button. Use an updated `clearpath-service restore` from the Terminal on that installation.
+
+**Block a site** saves a custom rule through the installed service with no restart. The rule covers the domain and its subdomains. **Blocked sites** shows custom rules, adult list rules, and adult list exceptions. The same operations are available as `clearpath-service block-site example.com` and `clearpath-service blocked-sites`. An older installation needs the updated service before it can accept additions. When reinstalling in a disposable VM, keep a copy of the installed policy first so you can use it as the new installation’s input.
 
 ### Browser setup (disposable VM only)
 

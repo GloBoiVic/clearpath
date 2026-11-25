@@ -3,9 +3,10 @@ import SwiftUI
 
 struct Panel: View {
     @ObservedObject var health: ProtectionHealth
+    let openBlockSite: () -> Void
+    let openBlockedSites: () -> Void
     let openPartnerSettings: () -> Void
     let openSetup: () -> Void
-    @State private var notice: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -38,7 +39,7 @@ struct Panel: View {
                 if health.state.offersRestore {
                     Task { await health.restore() }
                 } else {
-                    notice = "Block a site"
+                    openBlockSite()
                 }
             } label: {
                 let restoring = health.state.offersRestore || health.state == .restoring
@@ -48,17 +49,12 @@ struct Panel: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .disabled(health.state == .restoring || (health.state.offersRestore && !health.restoreAvailable))
-            destination("Blocked sites", icon: "globe")
+            destination("Blocked sites", icon: "globe", action: openBlockedSites)
             destination("Partner settings", icon: "person.crop.circle", action: openPartnerSettings)
             destination("Set up protection", icon: "gearshape", action: openSetup)
         }
         .padding(16)
         .frame(width: 320)
-        .alert(notice ?? "", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
-            Button("OK") { notice = nil }
-        } message: {
-            Text("This action is available only in the finished app.")
-        }
     }
 
     private func row(_ title: String, icon: String, value: String) -> some View {
@@ -70,10 +66,8 @@ struct Panel: View {
         }.accessibilityElement(children: .combine)
     }
 
-    private func destination(_ title: String, icon: String, action: (() -> Void)? = nil) -> some View {
-        Button {
-            if let action { action() } else { notice = title }
-        } label: {
+    private func destination(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon).frame(width: 18).foregroundStyle(.secondary)
                 Text(title)

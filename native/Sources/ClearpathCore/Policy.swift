@@ -5,6 +5,7 @@ import Darwin
 public enum PolicyError: Error { case invalidSchema, invalidDomain, duplicateKey, tooLarge, conflict }
 
 public struct Policy: Sendable {
+    private static let sizeLimit = 16 * 1024 * 1024
     public enum Decision: Equatable, Sendable { case block, safe(String), allow }
     public let adult: Set<String>
     public let custom: Set<String>
@@ -14,7 +15,7 @@ public struct Policy: Sendable {
     public let data: Data
 
     public init(data: Data) throws {
-        guard data.count <= 16 * 1024 * 1024 else { throw PolicyError.tooLarge }
+        guard data.count <= Self.sizeLimit else { throw PolicyError.tooLarge }
         let object = try JSONSerialization.jsonObject(with: data)
         var bytes = Array(data)
         if bytes.starts(with: [0xEF,0xBB,0xBF]) { bytes.removeFirst(3) }
@@ -45,6 +46,18 @@ public struct Policy: Sendable {
         safeSearch = normalized
         self.data = data
         digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    public init(file: URL) throws {
+        let fd = open(file.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else { throw PolicyError.invalidSchema }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG else {
+            throw PolicyError.invalidSchema
+        }
+        guard info.st_size <= Self.sizeLimit else { throw PolicyError.tooLarge }
+        try self.init(data: handle.read(upToCount: Self.sizeLimit + 1) ?? Data())
     }
 
     public static func domain(_ input: String) throws -> String {
