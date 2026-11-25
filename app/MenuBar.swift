@@ -61,6 +61,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
 
         hosting = NSHostingView(rootView: Panel(
             health: health,
+            siteBlocks: siteBlocks,
             openBlockSite: { [unowned self] in show("block-site", "Block a site", BlockSiteView(model: siteBlocks)) },
             openBlockedSites: { [unowned self] in show("blocked-sites", "Blocked sites", BlockedSitesView(model: siteBlocks)) },
             openPartnerSettings: { [unowned self] in show("partner-settings", "Partner settings", PartnerSettings()) },
@@ -110,7 +111,11 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
         panel.makeKeyAndOrderFront(nil)
         panel.invalidateShadow()
         statusItem.button?.highlight(true)
-        Task { await health.refresh() }
+        Task {
+            async let protection: Void = health.refresh()
+            async let removals: Void = siteBlocks.refreshRequests()
+            _ = await (protection, removals)
+        }
     }
 
     private func protectionStateChanged() {

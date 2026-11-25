@@ -33,9 +33,9 @@ V1 runs on Victor's Mac only. He keeps his admin account. The diagram is `docs/a
 **The one-way lock**
 - Adding a block is instant and needs no one. Removing any block (adult list, the user's own sites, mixed sites) needs partner approval. Updates from the blocklist source itself apply automatically; only removals the user starts need approval.
 - Locks start as soon as Clearpath is set up. Until the partner accepts the invite, the user can correct the partner's email or swap the person freely.
-- The partner approves with a one-tap Approve or Deny link in an email. No account, signup or password for the partner.
+- The partner opens the email link to review the site, then selects Approve or Deny on the confirmation page. No account, signup or password for the partner.
 - A backup partner is strongly recommended at setup. Requests go to both partners at once; either can approve.
-- If nobody answers in 7 days, the request goes through and both partners are told. Any Deny stops it. A user with no partner waits the same 7 days.
+- The first valid confirmed response is final. Approval applies the request and denial stops it. If nobody answers in 7 days, the request goes through and both partners are told. A user with no partner waits the same 7 days.
 - Changing a partner follows the same rule: the other partner or the one being replaced approves, or 7 days pass. The replaced partner is always told.
 
 **Alerts to the partner** (email only in V1)
@@ -121,5 +121,7 @@ Free and open source (MIT). No paid Apple Developer Program for now (Victor, 202
 | V1 product as described under V1 above: Victor's Mac only, admin account kept, partner alerts instead of anti-tamper, one-way lock, no pause, no YouTube forcing, email only | Victor, 2026-11-21 | Friction at the moment of weakness, without spyware |
 | No paid Apple Developer Program for now; V1 uses a local DNS service | Victor, 2026-11-21 | Get it built and running first |
 | Menu-bar app for V1 | Victor, 2026-11-21 | Stays out of the way |
+| First valid response is final | Victor, 2026-11-21 | Either partner can act immediately. A denial that arrives first stops the request. |
+| Open the email link, then tap Approve or Deny | Victor, 2026-11-21 | Opening the link leaves the decision pending, including when a mail scanner opens it. |
 
 Approved by Victor on 2026-11-21.

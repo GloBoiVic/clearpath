@@ -5,12 +5,14 @@ import ClearpathService
 // the Mac's DNS settings and need root; run them only where that is approved (docs/TESTING.md).
 
 let usage = """
-usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--upstream-port N]
+usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--upstream-port N] [--partner-config PATH]
        clearpath-service restore
        clearpath-service uninstall
        clearpath-service status
        clearpath-service blocked-sites
        clearpath-service block-site DOMAIN
+       clearpath-service request-site-removal custom|adult DOMAIN
+       clearpath-service site-removals
        clearpath-service refresh-community-list
        clearpath-service browser-profile
   install records every network service's DNS, starts the filter on 127.0.0.1:53 and points DNS at it.
@@ -19,6 +21,8 @@ usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--
   uninstall restores the recorded DNS, then stops the filter and removes only Clearpath's files.
   blocked-sites prints the installed block rules and their exceptions as JSON.
   block-site adds a custom block through the installed local service.
+  request-site-removal asks the installed service to request removal of the selected block rule.
+  site-removals prints the installed service's removal requests as JSON.
   refresh-community-list checks the weekly community list schedule as root.
   browser-profile writes Clearpath's removable Chrome and Firefox profile to standard output.
 
@@ -45,7 +49,8 @@ case "install":
     var options: [String: String] = ["--upstream-port": "53"]
     while let flag = arguments.first {
         arguments.removeFirst()
-        guard ["--filter", "--policy", "--upstream", "--upstream-port"].contains(flag), let value = arguments.first else { fail(usage, code: 2) }
+        guard ["--filter", "--policy", "--upstream", "--upstream-port", "--partner-config"].contains(flag),
+              let value = arguments.first else { fail(usage, code: 2) }
         arguments.removeFirst()
         options[flag] = value
     }
@@ -56,7 +61,8 @@ case "install":
             throw ServiceError.refused("Could not locate the current service executable.")
         }
         try manager.install(filter: URL(fileURLWithPath: filter), policy: URL(fileURLWithPath: policy),
-                            upstream: options["--upstream"], upstreamPort: port, controlTool: executable)
+                            upstream: options["--upstream"], upstreamPort: port, controlTool: executable,
+                            partnerConfig: options["--partner-config"].map { URL(fileURLWithPath: $0) })
     }
 case "restore":
     guard arguments.isEmpty else { fail(usage, code: 2) }
@@ -82,6 +88,12 @@ case "blocked-sites":
 case "block-site":
     guard arguments.count == 1 else { fail(usage, code: 2) }
     run { print(try SiteBlockControl.add(arguments[0])) }
+case "request-site-removal":
+    guard arguments.count == 2 else { fail(usage, code: 2) }
+    run { try SiteBlockControl.requestRemoval(arguments[1], rule: arguments[0]) }
+case "site-removals":
+    guard arguments.isEmpty else { fail(usage, code: 2) }
+    run { print(try SiteBlockControl.listRemovals()) }
 case "serve-site-blocks":
     guard arguments.isEmpty else { fail(usage, code: 2) }
     run { try SiteBlockControl.serve(manager: manager) }

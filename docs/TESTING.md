@@ -174,6 +174,10 @@ If the tool itself fails, restore each service in `/Library/Application Support/
 
 The Swift suite exercises the production policy updater with a controllable clock, a loopback HTTP source and the running Swift filter on a high port with a loopback DNS upstream. The generated job schedule and uninstall are checked with the simulated Mac. The VM procedure above uses a fixture DNS upstream, so it can check job registration with `launchctl print system/io.clearpath.community-list` but cannot reach the publisher through that upstream.
 
+### Site removal through the loopback partner service
+
+`swift test --package-path native --scratch-path artifacts/native-build --filter SiteRemovalTests` runs the policy writer against a temporary installation, the actual Python pairing service, synthetic mail and a running Swift filter with a loopback DNS upstream. The fixture clock tests approval, denial, request replay, restart recovery, both seven-day paths and preservation of adult exceptions through a community-list refresh. The Python suite also checks the decision preview and mail retry at the HTTP boundary. An HTTPS deployment, real email and any installation that changes Mac settings follow the project approval rules.
+
 ### Protection health and Restore internet in the VM
 
 Use the install procedure above with a loopback upstream and a synthetic original resolver. Keep any original fixture that binds port 53 stopped while the filter occupies that port. Before changing DNS, confirm the original fixture can resolve a fresh allowed name. Watch the menu bar while running the following checks:

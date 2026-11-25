@@ -78,7 +78,9 @@ Setup, Block a site, Blocked sites and Partner settings open as their own window
 
 **Block a site** opens a grouped form with a domain field and one-click shortcuts. Reddit, X and Tumblr appear under **Mixed sites**. Brave Search and Startpage appear under **Other search engines**. Each shortcut shows the domain it covers. Show the result of the addition beside the field and mark saved shortcuts as **Added**.
 
-**Blocked sites** lists the user's custom blocks, the adult list rules and any exceptions to the adult list. Refresh the rules when the window opens and after a successful addition.
+**Blocked sites** lists removal requests, the user's custom blocks, active adult list rules and any exceptions to the adult list. Each active rule can be selected for **Request removal**. Show **Requested** on a rule with a pending request. Show the selected rule, site and outcome in the request list. The panel's **Pending requests** count reflects requests that still need a decision or a policy update. Refresh the rules when the window opens and after a successful change.
+
+The email includes the requested site and the decision deadline. Opening its link displays a confirmation page with the site and **Approve** and **Deny** buttons. Selecting a button shows the result. A used, invalid or expired link shows **This request is no longer available.**
 
 ### Setup
 
