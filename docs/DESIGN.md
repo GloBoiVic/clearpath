@@ -45,7 +45,7 @@ The Finder icon uses a white shield with a winding blue path on a rounded blue t
 
 ## Menu-bar panel
 
-The menu-bar mark is a monochrome path inside a shield. Its silhouette or badge distinguishes protection and partner states. Give it an accessibility label naming both. The panel opens with **Clearpath**, then **Protection is on** with a green check when protection is verified. Below it, show **Partner** and **Pending requests** as separate rows. Place **Block a site** directly below the divider, followed by **Blocked sites** and **Partner settings**.
+The menu-bar mark is a monochrome path inside a shield. Its silhouette or badge distinguishes protection and partner states. Give it an accessibility label naming both. The panel opens with **Clearpath**, then **Protection is on** with a green check when protection is verified. While a VPN is the Mac's default resolver, a verified path through Clearpath shows **Protection is on through your VPN** with the same green check and mark; a VPN that answers without Clearpath shows **Your VPN is bypassing Clearpath** in orange with a note on how to turn protection back on (#76). Below it, show **Partner** and **Pending requests** as separate rows. Place **Block a site** directly below the divider, followed by **Blocked sites** and **Partner settings**.
 
 The panel opens just below the menu bar with its left edge at the shield, so it extends to the right. When there is no room on the right, it flips so its right edge meets the shield's right edge, and it always stays on the icon's screen. It has no arrow and uses the popover material. Clicking outside it or pressing Escape closes it.
 
