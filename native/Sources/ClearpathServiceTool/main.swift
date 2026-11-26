@@ -17,8 +17,8 @@ usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--
        clearpath-service refresh-community-list
        clearpath-service browser-profile
   install records every network service's DNS, starts the filter on 127.0.0.1:53 and points DNS at it.
-  Without --upstream it follows the Mac's current default and supplemental DNS resolvers.
-  restore returns DNS to its saved settings if the filter stays down, retaining the installation.
+  Without --upstream, ordinary names go to the active network service's own DNS and VPN-specific domains go to the VPN.
+  restore returns DNS to its saved settings unless the filter is up and resolving, retaining the installation.
   uninstall restores the recorded DNS, then stops the filter and removes only Clearpath's files.
   blocked-sites prints the installed block rules and their exceptions as JSON.
   block-site adds a custom block through the installed local service.
