@@ -53,9 +53,10 @@ public final class NetworkDNS: DNSUpstream, @unchecked Sendable {
     }
 
     /// The resolvers Restore internet would hand back: each recorded service's saved manual DNS
-    /// or, for automatic DNS, its negotiated servers, on that service's own interface, primary
-    /// first. Unlike `forQuestion`, this never follows a VPN's scopes, so it shows whether going
-    /// around Clearpath would work even when the filter's own route loops.
+    /// or, for automatic DNS, its negotiated servers, for each active service, primary first.
+    /// As on the ordinary route, the interface only qualifies link-local addresses. Unlike
+    /// `forQuestion`, this never follows a VPN's scopes, so it shows whether going around
+    /// Clearpath would work even when the filter's own route loops.
     public func networkResolver() -> any DNSUpstream {
         lock.lock()
         defer { lock.unlock() }
@@ -64,7 +65,7 @@ public final class NetworkDNS: DNSUpstream, @unchecked Sendable {
         }
         let primary = ["IPv4", "IPv6"].compactMap { state["State:/Network/Global/" + $0]?["PrimaryService"] as? String }
         let ids = saved.keys.sorted { (primary.contains($0) ? 0 : 1, $0) < (primary.contains($1) ? 0 : 1, $1) }
-        var targets: [(NWEndpoint, NWInterface?)] = []
+        var targets: [NWEndpoint] = []
         var seen = Set<NWEndpoint.Host>()
         for id in ids {
             let key = "State:/Network/Service/" + id
@@ -74,12 +75,10 @@ public final class NetworkDNS: DNSUpstream, @unchecked Sendable {
             for text in servers {
                 guard let host = Self.resolverHost(text, interface: interface), seen.insert(host).inserted,
                       self.port != listenPort || !Self.isLoopback(host) else { continue }
-                targets.append((.hostPort(host: host, port: port), interface))
+                targets.append(.hostPort(host: host, port: port))
             }
         }
-        return SelectedRoute(upstreams: targets.map { endpoint, interface in
-            NetworkUpstream(endpoint: endpoint, interface: interface, timeout: timeout / Double(targets.count))
-        })
+        return SelectedRoute(upstreams: targets.map { NetworkUpstream(endpoint: $0, timeout: timeout / Double(targets.count)) })
     }
 
     private struct SelectedRoute: DNSUpstream {

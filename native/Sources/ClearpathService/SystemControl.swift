@@ -38,7 +38,7 @@ public protocol SystemControl {
     /// question is the `com` name servers, which every working resolver answers.
     func filterResolves(port: UInt16) -> Bool
     /// True when the resolvers Restore internet would hand back (each recorded service's saved
-    /// or negotiated DNS, on its own interface) answer the same lookup directly within two seconds.
+    /// or negotiated DNS) answer the same lookup directly within two seconds.
     func networkResolves(_ record: RecoveryRecord) -> Bool
     func pause(seconds: Double)
 }
