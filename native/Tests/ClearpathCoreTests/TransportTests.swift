@@ -142,6 +142,27 @@ final class TransportTests: XCTestCase {
         }
     }
 
+    func testAVPNDefaultResolverIsSkippedForOrdinaryNamesSoTheyReachTheNetworkResolver() async throws {
+        // #73: the VPN would send these names straight back to the filter.
+        let router = try LocalDNSServer(tcp: false)
+        defer { router.stop() }
+        let vpn = try LocalDNSServer(tcp: false, ipv6: true, answerAddress: [100, 64, 0, 7])
+        defer { vpn.stop() }
+        let record = RecoveryRecord(createdAt: "", services: [], upstream: "192.0.2.1",
+                                    upstreamPort: router.port.rawValue, resolverState: "")
+        let vpnScope: [String: Any] = ["ServerAddresses": ["::1"], "ServerPort": Int(vpn.port.rawValue)]
+        let upstream = NetworkDNS(record: record, listenPort: 53, timeout: 0.5) {
+            ["State:/Network/Global/DNS": vpnScope,
+             "State:/Network/Global/IPv4": ["PrimaryService": "ethernet"],
+             "State:/Network/Service/ethernet/DNS": ["ServerAddresses": ["127.0.0.1"]],
+             "State:/Network/Service/tunnel/DNS": vpnScope.merging(["SupplementalMatchDomains": ["", "tailnet.example"]]) { $1 }]
+        }
+        let ordinary = try DNSMessage(await upstream.exchange(DNSMessage.query("public.example", type: 1), tcp: false))
+        XCTAssertEqual(ordinary.answers.first?.data, [192, 0, 2, 42])
+        let vpnName = try DNSMessage(await upstream.exchange(DNSMessage.query("host.tailnet.example", type: 1), tcp: false))
+        XCTAssertEqual(vpnName.answers.first?.data, [100, 64, 0, 7])
+    }
+
     func testPrivateTCPRetryUsesTheSameScopeWhenTheNetworkChanges() async throws {
         let standard = try LocalDNSServer(tcp: true)
         defer { standard.stop() }
