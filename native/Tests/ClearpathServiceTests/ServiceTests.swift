@@ -7,6 +7,13 @@ let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().del
 /// log of every command. Real files are written under a temp root; nothing touches this Mac.
 final class FakeMac: SystemControl {
     var isRoot = true
+    var consoleUserID: uid_t? = 501
+    var applicationSignatureValid = true
+    var loginItemRegistered = true
+    var loginItemRemovable = true
+    var installedProfiles: [[String: String]] = []
+    var profileListingValid = true
+    var profileRemovable = true
     var services: [(name: String, disabled: Bool, servers: [String])] = [
         ("Wi-Fi", false, []), ("Ethernet", false, ["192.0.2.53", "2001:db8::53"]), ("Thunderbolt Bridge", true, []),
     ]
@@ -46,6 +53,20 @@ final class FakeMac: SystemControl {
     func run(_ tool: Tool, _ arguments: [String]) throws -> CommandResult {
         calls.append(([tool.rawValue] + arguments).joined(separator: " "))
         switch (tool, arguments.first) {
+        case (.codesign, _):
+            return CommandResult(status: applicationSignatureValid ? 0 : 1, output: "")
+        case (.profiles, "show"):
+            guard profileListingValid else { return CommandResult(status: 0, output: "unrecognized output") }
+            let data = try PropertyListSerialization.data(fromPropertyList: ["_computerlevel": installedProfiles], format: .xml, options: 0)
+            return CommandResult(status: 0, output: String(decoding: data, as: UTF8.self))
+        case (.profiles, "remove"):
+            guard profileRemovable, let identifier = arguments.last else { return CommandResult(status: 1, output: "") }
+            installedProfiles.removeAll { $0["ProfileIdentifier"] == identifier }
+            return CommandResult(status: 0, output: "")
+        case (.launchctl, "asuser"):
+            guard loginItemRemovable else { return CommandResult(status: 1, output: "") }
+            loginItemRegistered = false
+            return CommandResult(status: 0, output: "unregistered\n")
         case (.networksetup, "-listallnetworkservices"):
             let names = services.map { ($0.disabled ? "*" : "") + $0.name }
             return CommandResult(status: 0, output: (["An asterisk (*) denotes that a network service is disabled."] + names).joined(separator: "\n") + "\n")
@@ -215,8 +236,8 @@ final class ServiceTests: XCTestCase {
         XCTAssertEqual(ServiceManager.primaryNameserver(in: "resolver #1\n  nameserver[0] : fe80::1\n"), nil)
         XCTAssertEqual(ServiceManager.primaryNameserver(in: "resolver #1\n  nameserver[0] : fe80::1%lo0\n"), "fe80::1%lo0")
         XCTAssertEqual(ServiceManager.primaryNameserver(in: "No DNS configuration available\n"), nil)
-        mac.resolverState = "DNS configuration\n\nresolver #1\n  nameserver[0] : 127.0.0.1\n"
         try manager.uninstall()
+        mac.resolverState = "DNS configuration\n\nresolver #1\n  nameserver[0] : 127.0.0.1\n"
         assertRefused({ try install(upstream: nil) }, containing: "pass --upstream")
     }
 
@@ -238,6 +259,150 @@ final class ServiceTests: XCTestCase {
         try FileManager.default.removeItem(at: other)
         try manager.uninstall()  // a second run is harmless and removes the now-empty folder
         XCTAssertFalse(FileManager.default.fileExists(atPath: paths.supportDirectory.path))
+        assertNothingInstalled()
+    }
+
+    private func stageApplication() throws -> URL {
+        let stage = root.appendingPathComponent("stage")
+        try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        try FileManager.default.createDirectory(at: paths.application, withIntermediateDirectories: true)
+        return stage
+    }
+
+    private func uninstallApplication(_ stage: URL) throws -> ApplicationUninstallOutcome {
+        try manager.uninstallApplication(codeHash: String(repeating: "a", count: 40), consoleUID: 501,
+                                         stagingDirectory: stage, reason: .withoutApproval)
+    }
+
+    func test_application_uninstall_restores_dns_and_removes_only_the_matching_profile_login_item_and_app() throws {
+        try manager.install(filter: filter, policy: policy, upstream: "192.0.2.10", upstreamPort: 53, controlTool: filter)
+        let stage = try stageApplication()
+        let other = ["ProfileIdentifier": "example.unrelated", "ProfileUUID": UUID().uuidString]
+        mac.installedProfiles = [other, ["ProfileIdentifier": BrowserProfile.identifier, "ProfileUUID": BrowserProfile.uuid]]
+        mac.calls.removeAll()
+
+        XCTAssertEqual(try uninstallApplication(stage), .removed)
+
+        let restore = try XCTUnwrap(mac.calls.lastIndex { $0.hasPrefix("/usr/sbin/networksetup -setdnsservers") })
+        let stop = try XCTUnwrap(mac.index(of: "/bin/launchctl bootout"))
+        let removeProfile = try XCTUnwrap(mac.index(of: "/usr/bin/profiles remove -type configuration -forced -identifier \(BrowserProfile.identifier)"))
+        XCTAssertLessThan(restore, stop)
+        XCTAssertLessThan(stop, removeProfile)
+        XCTAssertEqual(mac.installedProfiles, [other])
+        XCTAssertFalse(mac.loginItemRegistered)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.application.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.supportDirectory.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.pendingUninstallEvents.path))
+        assertNothingInstalled()
+    }
+
+    func test_application_uninstall_keeps_the_app_until_manual_profile_removal_is_verified() throws {
+        try install()
+        let stage = try stageApplication()
+        mac.installedProfiles = [["ProfileIdentifier": BrowserProfile.identifier, "ProfileUUID": BrowserProfile.uuid]]
+        mac.profileRemovable = false
+
+        XCTAssertEqual(try uninstallApplication(stage), .removeBrowserProfile)
+        XCTAssertEqual(try uninstallApplication(stage), .removeBrowserProfile)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.application.path))
+        XCTAssertTrue(mac.loginItemRegistered)
+        XCTAssertEqual(mac.dns, original)
+
+        mac.installedProfiles = []
+        mac.profileListingValid = false
+        XCTAssertThrowsError(try uninstallApplication(stage))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.application.path))
+
+        mac.profileListingValid = true
+        XCTAssertEqual(try uninstallApplication(stage), .removed)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.application.path))
+        assertNothingInstalled()
+    }
+
+    func test_application_uninstall_preserves_a_different_profile_with_the_same_identifier() throws {
+        try install()
+        let stage = try stageApplication()
+        mac.installedProfiles = [["ProfileIdentifier": BrowserProfile.identifier, "ProfileUUID": UUID().uuidString]]
+        let previous = mac.installedProfiles
+
+        XCTAssertEqual(try uninstallApplication(stage), .removed)
+        XCTAssertEqual(mac.installedProfiles, previous)
+        XCTAssertNil(mac.index(of: "/usr/bin/profiles remove"))
+    }
+
+    func test_application_uninstall_keeps_the_filter_until_the_effective_resolver_moves_away() throws {
+        try install()
+        let stage = try stageApplication()
+        let originalResolver = mac.resolverState
+        mac.resolverState = "DNS configuration\n\nresolver #1\n  nameserver[0] : 127.0.0.1\n"
+
+        XCTAssertThrowsError(try uninstallApplication(stage))
+        XCTAssertEqual(mac.dns, original)
+        XCTAssertTrue(mac.loaded)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.recovery.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.application.path))
+        XCTAssertNil(mac.index(of: "/bin/launchctl bootout"))
+
+        mac.resolverState = originalResolver
+        XCTAssertEqual(try uninstallApplication(stage), .removed)
+        assertNothingInstalled()
+    }
+
+    func test_application_uninstall_refuses_a_replaced_app_and_a_non_console_user_before_dns_changes() throws {
+        try install()
+        let stage = try stageApplication()
+        let installedDNS = mac.dns
+        mac.calls.removeAll()
+        mac.applicationSignatureValid = false
+        XCTAssertThrowsError(try uninstallApplication(stage))
+        mac.applicationSignatureValid = true
+        mac.consoleUserID = 502
+        XCTAssertThrowsError(try uninstallApplication(stage))
+        XCTAssertEqual(mac.dns, installedDNS)
+        XCTAssertTrue(mac.loaded)
+        XCTAssertTrue(mac.loginItemRegistered)
+        XCTAssertNil(mac.index(of: "/usr/sbin/networksetup -setdnsservers"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.application.path))
+    }
+
+    func test_application_uninstall_retries_without_duplicate_partner_events_or_credentials() throws {
+        let config = root.appendingPathComponent("pairing.json")
+        let key = String(repeating: "a", count: 43)
+        try Data("{\"origin\":\"https://example.test\",\"ownerKey\":\"\(key)\"}".utf8).write(to: config)
+        try manager.install(filter: filter, policy: policy, upstream: "192.0.2.10", upstreamPort: 53, partnerConfig: config)
+        let stage = try stageApplication()
+        XCTAssertEqual(try manager.pairingClient().origin.host, "example.test")
+        mac.installedProfiles = [["ProfileIdentifier": BrowserProfile.identifier, "ProfileUUID": BrowserProfile.uuid]]
+        mac.profileRemovable = false
+
+        XCTAssertEqual(try uninstallApplication(stage), .removeBrowserProfile)
+        XCTAssertEqual(mac.dns, original)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.application.path))
+        let pending = try FileManager.default.contentsOfDirectory(at: paths.pendingUninstallEvents, includingPropertiesForKeys: nil)
+        let eventFile = try XCTUnwrap(pending.first)
+        let event = try Data(contentsOf: eventFile)
+        XCTAssertEqual(pending.count, 1)
+        XCTAssertEqual(try mode(eventFile), 0o600)
+        XCTAssertFalse(String(decoding: event, as: UTF8.self).contains(key))
+        XCTAssertFalse(String(decoding: event, as: UTF8.self).contains("example.test"))
+        XCTAssertTrue(String(decoding: event, as: UTF8.self).contains("uninstalledWithoutApproval"))
+        let restarted = ServiceManager(paths: paths, system: mac, log: { _ in })
+        XCTAssertThrowsError(try restarted.pairingClient(), "a restarted job must not resume partner check-ins")
+
+        mac.installedProfiles = []
+        mac.loginItemRemovable = false
+        XCTAssertThrowsError(try uninstallApplication(stage))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.application.path))
+        XCTAssertEqual(try Data(contentsOf: eventFile), event)
+        mac.loginItemRemovable = true
+
+        let collision = stage.appendingPathComponent("RemovedClearpath.app")
+        try FileManager.default.createDirectory(at: collision, withIntermediateDirectories: false)
+        XCTAssertThrowsError(try uninstallApplication(stage))
+        try FileManager.default.removeItem(at: collision)
+        XCTAssertEqual(try uninstallApplication(stage), .removed)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: paths.pendingUninstallEvents.path), [eventFile.lastPathComponent])
+        XCTAssertEqual(try Data(contentsOf: eventFile), event)
         assertNothingInstalled()
     }
 

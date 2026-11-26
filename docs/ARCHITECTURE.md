@@ -43,7 +43,9 @@ The installed `io.clearpath.site-blocks` daemon checks in on startup and hourly,
 
 The pairing host uses the same clock as approval deadlines. Monitoring starts once the Mac has checked in and at least one partner has accepted. The first accepted partner starts a full 24-hour window if the Mac last checked in before they accepted. The service checks for a missed window every 30 seconds and when a fresh check-in arrives. The first detection queues one batch for the accepted partners in the same transaction that marks the window alerted. The sink publishes at a stable path so a delivery retry after interruption cannot publish a second batch. A new check-in rearms the monitor. Solo setups and pending invitations receive no mail.
 
-Victor approved clean uninstall with the missed check-in alert as a fallback on 2026-11-21. Uninstall stops the daemon and its check-ins. An explicit uninstall notification is tracked separately in #22 and #23.
+Victor approved clean uninstall with the missed check-in alert as a fallback on 2026-11-21. Uninstall stops the daemon and its check-ins. **Leave Clearpath** gates the administrator prompt on an exact sentence and a 60-second monotonic countdown. The prompt runs a verified copy of the bundled service tool from a private stage, which remains usable after the installed service files are removed. The tool restores DNS through the shared service cleanup, verifies the exact system browser profile is gone, unregisters the app in the signed-in user's session and retires the verified Applications bundle as one operation.
+
+When the installation has a configured pairing service, the authorized tool persists an uninstall event with an ID, timestamp and kind and removes the pairing configuration before restoring DNS. The event survives cleanup and retries in the root-only directory at `/private/var/db/io.clearpath.uninstall`. A restart during partial cleanup cannot resume authenticated check-ins. Delivery is tracked in #22. The solo trial creates no event.
 
 ### Community list refresh
 

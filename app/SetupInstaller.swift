@@ -16,6 +16,10 @@ enum SetupInstaller {
         case installed, cancelled, failed(String)
     }
 
+    enum AuthorizationResult {
+        case completed(String), cancelled, failed(String)
+    }
+
     static var runningFromApplications: Bool {
         Bundle.main.bundleURL.standardizedFileURL.path == destination.path
     }
@@ -52,11 +56,25 @@ enum SetupInstaller {
               let hash = runningCodeHash else {
             return .failed("Clearpath couldn’t verify this app or its location. DNS was not changed.")
         }
+        switch authorize(privilegedInstall, hash: hash, option: location == .copyToApplications ? "copy" : "in-place") {
+        case .completed: return .installed
+        case .cancelled: return .cancelled
+        case .failed(let message): return .failed(message)
+        }
+    }
+
+    static func authorizeUninstall() -> AuthorizationResult {
+        guard location() == .installHere, let hash = runningCodeHash, getuid() != 0 else {
+            return .failed("Open the verified Clearpath app in Applications and try again.")
+        }
+        return authorize(privilegedUninstall, hash: hash, option: String(getuid()))
+    }
+
+    private static func authorize(_ script: String, hash: String, option: String) -> AuthorizationResult {
         let process = Process()
         let output = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", authorization, privilegedInstall, Bundle.main.bundleURL.path, hash,
-                             location == .copyToApplications ? "copy" : "in-place"]
+        process.arguments = ["-e", authorization, script, Bundle.main.bundleURL.path, hash, option]
         process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = output
@@ -67,12 +85,12 @@ enum SetupInstaller {
             process.waitUntilExit()
             if process.terminationStatus == 0 {
                 let response = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .newlines)
-                if response == "installed" { return .installed }
+                if response.hasPrefix("completed\n") { return .completed(String(response.dropFirst("completed\n".count))) }
                 if response == "cancelled" { return .cancelled }
                 if response.hasPrefix("failed\n") { return .failed(String(response.dropFirst("failed\n".count))) }
             }
         } catch {}
-        return .failed("Clearpath couldn’t confirm the install result. Check DNS status before retrying.")
+        return .failed("Clearpath couldn’t confirm the result. Check DNS status before retrying.")
     }
 
     private static var runningCodeHash: String? {
@@ -101,8 +119,8 @@ enum SetupInstaller {
     on run argv
         set invocation to "/usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/sh -c " & quoted form of item 1 of argv & " clearpath-setup " & quoted form of item 2 of argv & " " & quoted form of item 3 of argv & " " & quoted form of item 4 of argv
         try
-            do shell script invocation with administrator privileges
-            return "installed"
+            set response to do shell script invocation with administrator privileges
+            return "completed" & linefeed & response
         on error detail number code
             if code is -128 then return "cancelled"
             return "failed" & linefeed & detail
@@ -112,7 +130,7 @@ enum SetupInstaller {
 
     // Copy without following links into a root-only directory, then verify the copy against
     // the running app’s code hash before executing anything from it as root.
-    private static let privilegedInstall = #"""
+    private static let stageSignedApp = #"""
     set -eu
     umask 077
     stage=$(/usr/bin/mktemp -d /private/var/tmp/clearpath-setup.XXXXXXXX)
@@ -128,6 +146,13 @@ enum SetupInstaller {
     /bin/chmod -R u=rwX,go=rX "$app"
     /usr/bin/codesign --verify --strict --deep -R="cdhash H\"$2\"" "$app"
     umask 022
+    """#
+
+    private static let privilegedInstall = stageSignedApp + "\n" + #"""
     "$app/Contents/MacOS/clearpath-service" install --from-setup "$3"
+    """#
+
+    private static let privilegedUninstall = stageSignedApp + "\n" + #"""
+    "$app/Contents/MacOS/clearpath-service" uninstall --from-app "$2" "$3"
     """#
 }

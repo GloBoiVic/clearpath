@@ -49,7 +49,7 @@ The menu-bar mark is a monochrome path inside a shield. Its silhouette or badge 
 
 The panel opens just below the menu bar with its left edge at the shield, so it extends to the right. When there is no room on the right, it flips so its right edge meets the shield's right edge, and it always stays on the icon's screen. It has no arrow and uses the popover material. Clicking outside it or pressing Escape closes it.
 
-Place **Set up protection** after **Partner settings**. Use words and symbols together for status. An unknown filter state gets an explicit status message. If restarting fails, give **Restore internet** priority and explain that using it alerts the partner. Keep browsing history, blocked-attempt counts and pause controls out of every view.
+Place **Set up protection** after **Partner settings**, then **Leave Clearpath** when running from Applications. Use words and symbols together for status. An unknown filter state gets an explicit status message. If restarting fails, give **Restore internet** priority and explain that using it alerts the partner. Keep browsing history, blocked-attempt counts and pause controls out of every view.
 
 While the filter has time to restart, show **Restarting protection…**. The recovery action requests administrator approval. Show **Restoring internet…** while it runs, **DNS restoration interrupted** if it must be retried, and **Previous DNS settings restored** with **DNS filtering is off** after confirmation. Until partner delivery is connected, describe the local event recorded for partner alerts.
 
@@ -72,7 +72,7 @@ flowchart LR
     Panel --> Uninstall
 ~~~
 
-Setup, Block a site, Blocked sites and Partner settings open as their own windows. Cmd-W closes them. Escape does nothing there and makes no sound, as in other Mac settings windows.
+Setup, Block a site, Blocked sites, Partner settings and Leave Clearpath open as their own windows. Cmd-W closes them. Escape does nothing there and makes no sound, as in other Mac settings windows.
 
 ### Site blocks
 
@@ -97,6 +97,10 @@ Use native grouped sections for **Primary partner** and **Backup partner**, with
 A partner change email names the role and both addresses. Its link opens **Review partner change** with **Approve** and **Deny**, under the same rules as a site removal page.
 
 The email and acceptance page identify the invited role. The partner selects **Accept invitation** without an account. The result is **Invitation accepted** or **This invitation is no longer available.** The approved copy is maintained in `clearpath/partner-copy.json`.
+
+### Uninstall window
+
+**Leave Clearpath** explains what uninstall removes and shows the exact confirmation sentence above the text input. Show the 60-second countdown when the sentence matches and reset it when the text changes. Enable **Uninstall now** when the countdown finishes, then use the macOS administrator prompt. Show progress, cancellation and any retry instructions in the window. If macOS requires manual profile removal, show the exact profile name and identifier, the Device Management path and **Check profile and continue**. Confirm completion before quitting.
 
 ## Main screen
 

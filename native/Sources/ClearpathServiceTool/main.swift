@@ -90,6 +90,19 @@ case "restore":
     guard arguments.isEmpty else { fail(usage, code: 2) }
     run { try manager.restoreInternet() }
 case "uninstall":
+    if arguments.count == 3, arguments[0] == "--from-app", let uid = uid_t(arguments[2]) {
+        run {
+            guard let executable = Bundle.main.executableURL else {
+                throw ServiceError.refused("Could not locate the bundled service executable.")
+            }
+            let stage = executable.deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent().deletingLastPathComponent()
+            let uninstaller = ServiceManager(log: { _ in })
+            let outcome = try uninstaller.uninstallApplication(codeHash: arguments[1], consoleUID: uid,
+                                                               stagingDirectory: stage, reason: .withoutApproval)
+            print(outcome == .removed ? "removed" : "remove-browser-profile")
+        }
+    }
     guard arguments.isEmpty else { fail(usage, code: 2) }
     run { try manager.uninstall() }
 case "status":

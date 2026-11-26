@@ -192,6 +192,14 @@ Use the install procedure above with a loopback upstream and a synthetic origina
 4. In a separate run, stop the restore command after it writes `internet-recovery.json` and before it confirms success. Check that `status` shows `restoring` with no restore event. Retry from the panel or run `sudo clearpath-service restore`.
 5. Compare current DNS with the saved settings, look up a fresh allowed name with `dscacheutil`, and confirm the panel shows **Previous DNS settings restored**. Confirm that repeating the command retains one event ID and that the daemon is still installed. Uninstall, verify rollback, and discard the clone.
 
+### Immediate uninstall in the VM
+
+Use a clean disposable guest and the signed build from the PR head. Save the pre-install network service DNS, `scutil --dns`, Device Management and Login Items state. With guest-specific approval, install from **Set up protection** and install the bundled browser profile. Before uninstall, confirm the app runs from Applications, the three Clearpath jobs are loaded, Open at Login is on, and only the intended Clearpath profile was added.
+
+1. Open **Leave Clearpath** from the shield. Enter an incomplete sentence and confirm the action remains unavailable. Type the exact sentence and try before 60 seconds. Confirm the password prompt does not open and the installed state still matches.
+2. After the full countdown, choose **Uninstall now**. With approval for this guest operation, authorize it in the macOS prompt. If the CLI cannot remove the Clearpath profile, get approval for manual removal of that profile in **General → Device Management**, remove it and choose **Check profile and continue**. Verify that a retry with the profile still installed cannot remove the app.
+3. Compare DNS to the pre-install baseline. Confirm no Clearpath job, plist, support folder, profile, login item, or `/Applications/Clearpath.app` remains. The one exception: with a partner configured, the root-only pending event under `/private/var/db/io.clearpath.uninstall` stays for #22 to deliver; a solo install leaves none. Restart both browsers if they were open and compare their policies to the baseline. Reboot the guest with approval and repeat the checks, including that Clearpath does not start at login.
+
 ## Automatic routing in the VM
 
 Use an isolated guest network with a synthetic DHCP peer and DNS servers bound inside the guest. Supply a search domain and two different default resolver addresses, then install without `--upstream`. Victor approved guest networking and privileged tests for #10 in a disposable VM only.

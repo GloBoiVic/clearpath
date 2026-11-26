@@ -6,6 +6,8 @@ public enum Tool: String, Sendable {
     case networksetup = "/usr/sbin/networksetup"
     case launchctl = "/bin/launchctl"
     case scutil = "/usr/sbin/scutil"
+    case profiles = "/usr/bin/profiles"
+    case codesign = "/usr/bin/codesign"
 }
 
 public struct CommandResult: Sendable {
@@ -23,6 +25,7 @@ public struct NetworkLocation: Sendable {
 /// Everything that touches the running system. Tests substitute a fake; `MacSystem` is real.
 public protocol SystemControl {
     var isRoot: Bool { get }
+    var consoleUserID: uid_t? { get }
     func run(_ tool: Tool, _ arguments: [String]) throws -> CommandResult
     func networkLocation() throws -> NetworkLocation
     /// True when nothing holds the loopback UDP or TCP port.
@@ -37,6 +40,13 @@ public struct MacSystem: SystemControl {
     public init() {}
 
     public var isRoot: Bool { geteuid() == 0 }
+
+    public var consoleUserID: uid_t? {
+        var uid: uid_t = 0
+        guard let name = SCDynamicStoreCopyConsoleUser(nil, &uid, nil) as String?,
+              name != "loginwindow", uid != 0 else { return nil }
+        return uid
+    }
 
     public func networkLocation() throws -> NetworkLocation {
         guard let preferences = SCPreferencesCreate(nil, "Clearpath" as CFString, nil),

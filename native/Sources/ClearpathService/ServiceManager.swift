@@ -9,6 +9,7 @@ public struct ServicePaths: Sendable {
     static let communityListLabel = "io.clearpath.community-list"
     public let root: URL
     public init(root: URL = URL(fileURLWithPath: "/")) { self.root = root }
+    var application: URL { root.appendingPathComponent("Applications/Clearpath.app") }
     public var supportDirectory: URL { root.appendingPathComponent("Library/Application Support/Clearpath") }
     public var filter: URL { supportDirectory.appendingPathComponent("clearpath-filter") }
     public var controlTool: URL { supportDirectory.appendingPathComponent("clearpath-service") }
@@ -18,13 +19,15 @@ public struct ServicePaths: Sendable {
     var communityListStatus: URL { supportDirectory.appendingPathComponent("community-list.json") }
     var partnerConfig: URL { supportDirectory.appendingPathComponent("partner-service.json") }
     var siteRemovals: URL { supportDirectory.appendingPathComponent("site-removals.json") }
+    var uninstallEvent: URL { supportDirectory.appendingPathComponent("uninstall-event.json") }
+    var pendingUninstallEvents: URL { root.appendingPathComponent("private/var/db/io.clearpath.uninstall") }
     public var daemonPlist: URL { root.appendingPathComponent("Library/LaunchDaemons/\(Self.label).plist") }
     var siteBlockPlist: URL { daemonPlist.deletingLastPathComponent().appendingPathComponent("\(Self.siteBlockLabel).plist") }
     var communityListPlist: URL { daemonPlist.deletingLastPathComponent().appendingPathComponent("\(Self.communityListLabel).plist") }
     /// Clearpath's files only, in removal order: the recovery record goes last.
     var owned: [URL] {
         [communityListPlist, siteBlockPlist, daemonPlist, filter, controlTool, policy, communityListStatus,
-         partnerConfig, siteRemovals, internetRecovery, recovery]
+         partnerConfig, uninstallEvent, siteRemovals, internetRecovery, recovery]
     }
 }
 
@@ -233,27 +236,55 @@ public final class ServiceManager {
         try withServiceLock { try uninstallLocked() }
     }
 
-    private func uninstallLocked() throws {
-        if let record = try readRecord() {
-            try restoreOriginalDNS(record)
+    func uninstallLocked(prepare: () throws -> Void = {}, beforeRemovingFiles: () throws -> Void = {},
+                         finish: () throws -> Void = {}) throws {
+        let record = try readRecord()
+        if let record {
+            _ = try recoveryLocation(record)
         } else if let stuck = try readServices().first(where: { $0.servers.contains(Self.listenAddress) }),
-                  FileManager.default.fileExists(atPath: paths.daemonPlist.path) || daemonLoaded() {
+                  try (FileManager.default.fileExists(atPath: paths.daemonPlist.path) || uninstallJobIsLoaded(ServicePaths.label)) {
             // Without the record the original setting is unknown, and stopping the daemon would cut DNS.
             throw ServiceError.refused("The recovery record is missing and \(stuck.name) still uses \(Self.listenAddress). Set its DNS back by hand first (networksetup -setdnsservers \"\(stuck.name)\" Empty for automatic).")
         }
-        for label in [ServicePaths.communityListLabel, ServicePaths.siteBlockLabel, ServicePaths.label] where daemonLoaded(label: label) {
+        try prepare()
+        if let record {
+            try restoreOriginalDNS(record)
+            try waitForRestoredResolver()
+        }
+        for label in [ServicePaths.communityListLabel, ServicePaths.siteBlockLabel, ServicePaths.label] where try uninstallJobIsLoaded(label) {
             let result = try system.run(.launchctl, ["bootout", "system/\(label)"])
-            if result.status != 0 && daemonLoaded(label: label) {
+            if try uninstallJobIsLoaded(label) {
                 throw ServiceError.failed("launchctl bootout failed: \(result.output)")
             }
             log("Stopped \(label).")
         }
-        for url in paths.owned where (try? url.checkResourceIsReachable()) == true || isSymlink(url) {
-            do { try FileManager.default.removeItem(at: url) } catch { throw ServiceError.failed("Could not remove \(url.path): \(error)") }
+        try beforeRemovingFiles()
+        for url in paths.owned {
+            guard unlink(url.path) == 0 || errno == ENOENT else {
+                throw ServiceError.failed("Could not remove \(url.path): errno \(errno).")
+            }
         }
+        try finish()
         // Only an empty folder goes; anything else in it isn't Clearpath's to delete.
         rmdir(paths.supportDirectory.path)
         log("Removed Clearpath's files.")
+    }
+
+    private func uninstallJobIsLoaded(_ label: String) throws -> Bool {
+        let result = try system.run(.launchctl, ["print", "system/\(label)"])
+        if result.status == 113 { return false }
+        try check(result, "Could not verify launchd job \(label)")
+        return true
+    }
+
+    private func waitForRestoredResolver() throws {
+        for _ in 0..<20 {
+            let resolver = try system.run(.scutil, ["--dns"])
+            try check(resolver, "scutil --dns")
+            if !Self.primaryNameservers(in: resolver.output).contains(Self.listenAddress) { return }
+            system.pause(seconds: 0.25)
+        }
+        throw ServiceError.failed("The default DNS resolver still uses Clearpath. Try again before stopping the filter.")
     }
 
     // MARK: Status
