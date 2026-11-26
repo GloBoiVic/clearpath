@@ -163,6 +163,22 @@ final class TransportTests: XCTestCase {
         XCTAssertEqual(vpnName.answers.first?.data, [100, 64, 0, 7])
     }
 
+    func testTheNetworkResolverCheckFollowsTheFilterRouteAndNeedsAnAnswer() throws {
+        let router = try LocalDNSServer(tcp: false)
+        defer { router.stop() }
+        let silent = try LocalDNSServer(tcp: false, silent: true)
+        defer { silent.stop() }
+        func network(_ port: NWEndpoint.Port) -> NetworkDNS {
+            let record = RecoveryRecord(createdAt: "", services: [], upstream: "192.0.2.1", upstreamPort: port.rawValue, resolverState: "")
+            return NetworkDNS(record: record, listenPort: 53, timeout: 0.5) {
+                ["State:/Network/Global/IPv4": ["PrimaryService": "ethernet"],
+                 "State:/Network/Service/ethernet/DNS": ["ServerAddresses": ["127.0.0.1"]]]
+            }
+        }
+        XCTAssertTrue(MacSystem.resolves(through: network(router.port)))
+        XCTAssertFalse(MacSystem.resolves(through: network(silent.port)))
+    }
+
     func testPrivateTCPRetryUsesTheSameScopeWhenTheNetworkChanges() async throws {
         let standard = try LocalDNSServer(tcp: true)
         defer { standard.stop() }

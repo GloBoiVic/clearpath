@@ -131,6 +131,8 @@ class VMHelperTests(unittest.TestCase):
             proc = subprocess.Popen([str(TOOLS / "vm-dns-fixture"), args[0], "127.0.0.1", str(port), *args[1:]],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             self.addCleanup(proc.wait, 5)
+            self.addCleanup(proc.stdout.close)
+            self.addCleanup(proc.stderr.close)
             self.addCleanup(proc.kill)
             self.assertIn("fixture on 127.0.0.1", proc.stdout.readline())
             return proc, port

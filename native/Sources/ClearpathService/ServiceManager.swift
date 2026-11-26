@@ -68,6 +68,9 @@ public struct ServiceStatus: Codable, Equatable, Sendable {
     public internal(set) var restoreEvent: InternetRestoreEvent?
     public internal(set) var restoreAvailable: Bool? = nil
     public internal(set) var defaultResolverUsesFilter: Bool? = nil
+    /// True when another resolver is the default, lookups through the filter fail, and the
+    /// network's own resolver answers: Clearpath is what breaks lookups, as in a VPN loop (#73).
+    public internal(set) var lookupsFailThroughFilter: Bool? = nil
     public internal(set) var communityList: CommunityListStatus? = nil
     public internal(set) var setupInstallAvailable: Bool? = nil
 }
@@ -303,7 +306,7 @@ public final class ServiceManager {
                              dnsPointsToFilter: !services.isEmpty && services.allSatisfy { $0.servers == [Self.listenAddress] },
                              services: services)
         if status.installed {
-            guard !isSymlink(paths.recovery), try readRecord() != nil else {
+            guard !isSymlink(paths.recovery), let record = try readRecord() else {
                 throw ServiceError.failed("Could not verify the recorded DNS settings.")
             }
             status.restoreAvailable = FileManager.default.isExecutableFile(atPath: paths.controlTool.path)
@@ -313,6 +316,11 @@ public final class ServiceManager {
                 let resolver = try system.run(.scutil, ["--dns"])
                 try check(resolver, "scutil --dns")
                 status.defaultResolverUsesFilter = Self.primaryNameservers(in: resolver.output) == [Self.listenAddress]
+                // A VPN that is the default resolver can send lookups back through Clearpath in a
+                // loop that still answers the probe. Only then is a real lookup worth its cost.
+                if status.defaultResolverUsesFilter == false && !system.filterResolves(port: Self.listenPort) {
+                    status.lookupsFailThroughFilter = system.networkResolves(record)
+                }
             }
         }
         status.setupInstallAvailable = try setupInstallAvailable(status)

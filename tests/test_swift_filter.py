@@ -407,6 +407,7 @@ class SwiftFilterProcess(unittest.TestCase):
         self.assertIn(True, probes)
         self.assertEqual(lookups, [False] * 4)
         proc.kill()
+        proc.communicate(timeout=5)
 
     def test_the_resolution_check_succeeds_through_a_working_filter(self):
         proc, port = self.launch()
