@@ -19,6 +19,7 @@ struct FilterStatus: Decodable, Sendable {
     let dnsPointsToFilter: Bool
     let defaultResolverUsesFilter: Bool?
     let lookupsFailThroughFilter: Bool?
+    let defaultResolverReachesFilter: Bool?
     let recovery: Recovery?
     let restoreAvailable: Bool?
     let setupInstallAvailable: Bool?
@@ -30,14 +31,34 @@ struct FilterStatus: Decodable, Sendable {
         installed && dnsPointsToFilter && recovery == nil && (!answering || lookupsFailThroughFilter == true)
     }
 
+    private var filterWorks: Bool {
+        installed && daemonLoaded && pid != nil && answering && dnsPointsToFilter && recovery == nil
+            && lookupsFailThroughFilter != true
+    }
+
+    /// Lookups verifiably go through Clearpath: it is the default resolver, or the default
+    /// resolver (a VPN) sent a check name through it (#76).
     var protected: Bool {
-        installed && daemonLoaded && pid != nil && answering && dnsPointsToFilter
-            && defaultResolverUsesFilter == true && recovery == nil
+        filterWorks && (defaultResolverUsesFilter == true || throughVPN)
+    }
+
+    var throughVPN: Bool {
+        filterWorks && defaultResolverUsesFilter == false && defaultResolverReachesFilter == true
+    }
+
+    /// The default resolver (a VPN) answered a check name without Clearpath.
+    var vpnBypass: Bool {
+        filterWorks && defaultResolverUsesFilter == false && defaultResolverReachesFilter == false
     }
 
     var message: String {
+        if throughVPN && communityList != nil { return "Protection is on through your VPN. The community blocklist is active." }
+        if throughVPN { return "DNS filtering is on through your VPN. The community blocklist has not been verified." }
         if protected && communityList != nil { return "Protection is on. The community blocklist is active." }
         if protected { return "DNS filtering is on. The community blocklist has not been verified." }
+        if vpnBypass {
+            return "Your VPN answers lookups without Clearpath, so sites aren’t filtered. Turn off your VPN’s DNS setting to turn protection back on."
+        }
         if recovery == .restored { return "DNS was restored to its previous settings." }
         if setupInstallAvailable == true {
             return "The Clearpath filter service is not installed."
@@ -69,12 +90,14 @@ struct FilterStatus: Decodable, Sendable {
 }
 
 enum ProtectionState: Equatable {
-    case unknown, protected, restarting, offline, restoring, interrupted, restored
+    case unknown, protected, protectedThroughVPN, vpnBypass, restarting, offline, restoring, interrupted, restored
 
     var headline: String {
         switch self {
         case .unknown: return "Protection status unknown"
         case .protected: return "Protection is on"
+        case .protectedThroughVPN: return "Protection is on through your VPN"
+        case .vpnBypass: return "Your VPN is bypassing Clearpath"
         case .restarting: return "Restarting protection…"
         case .offline: return "Protection is offline"
         case .restoring: return "Restoring internet…"
@@ -84,6 +107,19 @@ enum ProtectionState: Equatable {
     }
 
     var offersRestore: Bool { self == .offline || self == .interrupted }
+    var isOn: Bool { self == .protected || self == .protectedThroughVPN }
+
+    /// Shown under the headline.
+    var note: String? {
+        self == .vpnBypass ? "Sites aren’t filtered while your VPN answers lookups itself. Turn off your VPN’s DNS setting to turn protection back on." : nil
+    }
+
+    static func from(_ status: FilterStatus?) -> ProtectionState {
+        guard let status else { return .unknown }
+        if status.throughVPN { return .protectedThroughVPN }
+        if status.protected { return .protected }
+        return status.vpnBypass ? .vpnBypass : .unknown
+    }
 }
 
 @MainActor
@@ -122,7 +158,7 @@ final class ProtectionHealth: ObservableObject {
             switch result?.recovery {
             case .restored: updateState(.restored)
             case .restoring: updateState(.interrupted)
-            default: updateState(result?.protected == true ? .protected : .unknown)
+            default: updateState(ProtectionState.from(result))
             }
         }
     }
@@ -135,7 +171,7 @@ final class ProtectionHealth: ObservableObject {
         let outcome = await Task.detached(priority: .userInitiated) { RestoreCommand.run() }.value
         restoring = false
         await refresh()
-        restoreError = state == .restored || state == .protected ? nil : outcome.message
+        restoreError = state == .restored || state.isOn ? nil : outcome.message
         if state == .restoring { updateState(.unknown) }
         onStateChange?()
     }
@@ -143,7 +179,7 @@ final class ProtectionHealth: ObservableObject {
     private func updateState(_ next: ProtectionState) {
         guard state != next else { return }
         state = next
-        if next == .restored || next == .protected { restoreError = nil }
+        if next == .restored || next.isOn { restoreError = nil }
         onStateChange?()
     }
 }

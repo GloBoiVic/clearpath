@@ -96,7 +96,7 @@ The listener accepts only `127.0.0.1` or `::1`, and port 53 or ports 1024 and up
 bin="$(swift build --package-path native --scratch-path artifacts/native-build --show-bin-path)"
 sudo "$bin/clearpath-service" install --filter "$bin/clearpath-filter" --policy policy.json [--upstream IP] [--upstream-port N]
 "$bin/clearpath-service" status      # JSON: daemon, DNS and recovery state
-sudo "$bin/clearpath-service" restore    # emergency recovery if the filter stays down
+sudo "$bin/clearpath-service" restore    # emergency recovery if the filter is down or can't resolve
 sudo "$bin/clearpath-service" uninstall
 ```
 

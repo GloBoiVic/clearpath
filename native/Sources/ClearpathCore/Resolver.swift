@@ -10,6 +10,14 @@ public extension DNSUpstream {
     func forQuestion(named name: DNSName) -> any DNSUpstream { self }
 }
 
+/// Names only Clearpath answers (#76). The status check asks the Mac's default resolver for a
+/// fresh one: if this TXT marker comes back, that resolver sends lookups through Clearpath.
+public enum FilterCheck {
+    public static let suffix = "resolver-check.example"
+    /// One TXT string, "clearpath".
+    public static let marker: [UInt8] = [9] + Array("clearpath".utf8)
+}
+
 public struct Resolver: Sendable {
     public let policy: Policy
     private let onBlocked: @Sendable () -> Void
@@ -22,6 +30,11 @@ public struct Resolver: Sendable {
         guard let query = try? DNSMessage(packet) else { return DNSMessage.error(for: packet, code: 1) }
         do { try query.validateQuery() } catch { return query.response(code: 1) }
         guard query.klass == 1 else { return query.response(code: 5) }
+        if let host = query.name.host, Policy.matches(host, rules: [FilterCheck.suffix]) {
+            // Answered here, never forwarded or counted as a blocked lookup; TTL 0 so no cache keeps it.
+            return query.type == 16 ? query.response(answers: [DNSRecord(name: query.name, type: 16, ttl: 0, data: FilterCheck.marker)])
+                                    : query.response()
+        }
         do {
             let response: [UInt8]
             switch query.name.host.map(policy.decide) ?? .allow {

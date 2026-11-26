@@ -71,6 +71,9 @@ public struct ServiceStatus: Codable, Equatable, Sendable {
     /// True when another resolver is the default, lookups through the filter fail, and the
     /// network's own resolver answers: Clearpath is what breaks lookups, as in a VPN loop (#73).
     public internal(set) var lookupsFailThroughFilter: Bool? = nil
+    /// While another resolver is the default: true when it sends a check name through Clearpath,
+    /// false when it answers without Clearpath (a bypass), nil when it doesn't answer (#76).
+    public internal(set) var defaultResolverReachesFilter: Bool? = nil
     public internal(set) var communityList: CommunityListStatus? = nil
     public internal(set) var setupInstallAvailable: Bool? = nil
 }
@@ -315,11 +318,17 @@ public final class ServiceManager {
             if status.dnsPointsToFilter && status.answering {
                 let resolver = try system.run(.scutil, ["--dns"])
                 try check(resolver, "scutil --dns")
-                status.defaultResolverUsesFilter = Self.primaryNameservers(in: resolver.output) == [Self.listenAddress]
+                let defaultServers = Self.primaryNameservers(in: resolver.output)
+                status.defaultResolverUsesFilter = defaultServers == [Self.listenAddress]
                 // A VPN that is the default resolver can send lookups back through Clearpath in a
-                // loop that still answers the probe. Only then is a real lookup worth its cost.
-                if status.defaultResolverUsesFilter == false && !system.filterResolves(port: Self.listenPort) {
-                    status.lookupsFailThroughFilter = system.networkResolves(record)
+                // loop that still answers the probe (#73), or answer them without Clearpath (#76).
+                // Only then are real lookups worth their cost.
+                if status.defaultResolverUsesFilter == false {
+                    if !system.filterResolves(port: Self.listenPort) {
+                        status.lookupsFailThroughFilter = system.networkResolves(record)
+                    } else {
+                        status.defaultResolverReachesFilter = system.reachesFilter(through: defaultServers)
+                    }
                 }
             }
         }

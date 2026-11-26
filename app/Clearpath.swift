@@ -14,14 +14,17 @@ struct Panel: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Clearpath").font(.headline)
             HStack(spacing: 8) {
-                Image(systemName: health.state == .protected ? "checkmark.shield" : "exclamationmark.shield")
-                    .foregroundStyle(health.state == .protected ? Color.green : Color.orange)
+                Image(systemName: health.state.isOn ? "checkmark.shield" : "exclamationmark.shield")
+                    .foregroundStyle(health.state.isOn ? Color.green : Color.orange)
                 Text(health.state.headline)
             }
             .font(.system(size: 17, weight: .semibold))
             row("Partner", icon: "person.2", value: "See settings")
             row("Pending requests", icon: "tray", value: siteBlocks.pendingCount.map(String.init) ?? "Unavailable")
             Divider()
+            if let note = health.state.note {
+                Text(note).foregroundStyle(.secondary)
+            }
             if health.state == .restored {
                 Text("DNS filtering is off.").foregroundStyle(.secondary)
             }
@@ -85,7 +88,7 @@ struct Panel: View {
 
 /// The menu-bar mark: a path through a shield, drawn as a template image so the menu bar tints it.
 func shieldImage(for state: ProtectionState) -> NSImage {
-    let filled = state == .protected || state == .offline || state == .interrupted
+    let filled = state.isOn || state == .offline || state == .interrupted || state == .vpnBypass
     let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
         guard let context = NSGraphicsContext.current else { return false }
         let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
@@ -96,7 +99,7 @@ func shieldImage(for state: ProtectionState) -> NSImage {
                                    width: size.width, height: size.height),
                         from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         }
-        if state == .protected {
+        if state.isOn {
             context.compositingOperation = .destinationOut
             let path = NSBezierPath()
             path.move(to: NSPoint(x: 10, y: 3))
