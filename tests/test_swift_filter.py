@@ -78,6 +78,13 @@ class LiveFixture(Fixture):
             out.add_answer(RR(name, QTYPE.CNAME, rdata=CNAME(self.safe_redirect)))
             out.add_answer(RR(self.safe_redirect, QTYPE.A, rdata=A("192.0.2.99")))
             return out.pack()
+        if name == "www.duckduckgo.com.":
+            # What a network resolver answers for this name (#60).
+            self.calls.append((name, query.q.qtype, tcp))
+            out = reply(query)
+            out.add_answer(RR(name, QTYPE.CNAME, rdata=CNAME("duckduckgo.com")))
+            out.add_answer(RR("duckduckgo.com", QTYPE.A, rdata=A("192.0.2.77")))
+            return out.pack()
         bad_rdata = {"short-https.example.": b"\x00", "pointer-https.example.": b"\x00\x01\xc0\x0c"}.get(name)
         if bad_rdata is not None:
             self.calls.append((name, query.q.qtype, tcp))
@@ -223,6 +230,23 @@ class SwiftFilterProcess(unittest.TestCase):
         asked = {name.rstrip(".") for name, _, _ in self.fixture.calls}
         self.assertTrue(asked.isdisjoint(self.policy_data["safesearch"]), asked)
         self.assertTrue({"forcesafesearch.google.com", "strict.bing.com", "safe.duckduckgo.com"} <= asked)
+        self.stop(proc)
+
+    def test_shipped_default_policy_forces_safesearch_for_www_and_bare_names(self):
+        shipped = json.loads((ROOT / "app" / "default-policy.json").read_text())
+        for engine in ("google.com", "bing.com", "duckduckgo.com"):
+            self.assertIn(engine, shipped["safesearch"])
+            self.assertIn("www." + engine, shipped["safesearch"])
+        self.policy.write_text(json.dumps(shipped))
+        proc, port = self.launch()
+        for tcp in (False, True):
+            for host in ("duckduckgo.com", "www.duckduckgo.com"):
+                response = self.ask(port, host, "A", tcp)
+                self.assertEqual(response.header.rcode, RCODE.NOERROR, (host, tcp))
+                self.assertEqual(response.rr[0].rtype, QTYPE.CNAME)
+                self.assertEqual(str(response.rr[0].rdata).rstrip("."), "safe.duckduckgo.com")
+        asked = {name.rstrip(".") for name, _, _ in self.fixture.calls}
+        self.assertTrue({"duckduckgo.com", "www.duckduckgo.com"}.isdisjoint(asked), asked)
         self.stop(proc)
 
     def test_installed_policy_reload_blocks_without_restart_and_keeps_the_last_valid_policy(self):

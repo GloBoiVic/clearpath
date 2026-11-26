@@ -9,6 +9,7 @@
     "www.bing.com": "strict.bing.com",
     "bing.com": "strict.bing.com",
     "edgeservices.bing.com": "strict.bing.com",
-    "duckduckgo.com": "safe.duckduckgo.com"
+    "duckduckgo.com": "safe.duckduckgo.com",
+    "www.duckduckgo.com": "safe.duckduckgo.com"
   }
 }

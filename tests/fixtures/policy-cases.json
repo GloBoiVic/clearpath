@@ -11,6 +11,7 @@
   {"host":"www.bing.com","decision":"safe:strict.bing.com"},
   {"host":"edgeservices.bing.com","decision":"safe:strict.bing.com"},
   {"host":"duckduckgo.com","decision":"safe:safe.duckduckgo.com"},
+  {"host":"www.duckduckgo.com","decision":"safe:safe.duckduckgo.com"},
   {"host":"accounts.google.com","decision":"allow"},
   {"host":"api.github.com","decision":"allow"},
   {"host":"registry.npmjs.org","decision":"allow"},
