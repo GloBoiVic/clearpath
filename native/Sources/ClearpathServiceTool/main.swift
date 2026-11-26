@@ -24,7 +24,7 @@ usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--
   request-site-removal asks the installed service to request removal of the selected block rule.
   site-removals prints the installed service's removal requests as JSON.
   refresh-community-list checks the weekly community list schedule as root.
-  browser-profile writes Clearpath's removable Chrome and Firefox profile to standard output.
+  browser-profile writes Clearpath's removable Safari, Chrome and Firefox profile to standard output.
 
 """
 
