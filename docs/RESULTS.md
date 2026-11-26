@@ -269,3 +269,16 @@ Issue #69 closes the Brave bypass found in the #54 check: Brave's own secure DNS
 | Profile removal | Pass | `sudo profiles remove -identifier io.clearpath.browser-policy.v1` left no profiles and no Brave, Chrome or Firefox file in `/Library/Managed Preferences`. After restarting Brave, `example.org` loaded again with secure DNS on Cloudflare. |
 
 **What Brave covers now:** with Clearpath Browser Policies installed, Brave uses the system DNS path, so blocked sites fail in normal and private windows, and Brave's Tor windows are off. **Not covered (by decision):** a browser setting deliberately changed to get around Clearpath, VPNs and Tor Browser (see [BRIEF.md](BRIEF.md)). **Not tested:** other Brave versions, the uninstall result's new wording ("Restart Chrome, Brave and Firefox if they were open", type-checked but not shown), and Brave's Bing and DuckDuckGo SafeSearch (they use the same DNS mappings as Chrome).
+
+# Restore internet in a DNS loop in a disposable VM — 2026-11-26
+
+Issue #74: during #54 a Tailscale DNS loop took Victor's Mac offline, and **Restore internet** did nothing. VM: `clearpath-73-74`, a Tart 2.41.1 clone of `ghcr.io/cirruslabs/macos-golden-gate-base@sha256:4859ea9483a1f6e377301f23a5243798044266a373fc36635e9dcd045e09292f` (macOS 27.2, 26B123, arm64). The guest's only resolvers were `vm-dns-fixture` instances: a synthetic router on `192.0.2.53` and a Tailscale stand-in on `100.100.100.100`, published as a match-all resolver, which forwarded other names to the interface DNS. Clearpath was installed with `clearpath-service install` in network-DNS mode (no `--upstream`) with `policy.example.json`. Victor approved the VM steps (2026-11-26). Victor's Mac was not changed.
+
+| Check | Result | Evidence |
+|---|---|---|
+| Before the loop | Pass | `status` showed answering, DNS on the filter and the filter as default resolver. `allowed3.example` resolved through the router fixture; `adult.example` failed and never reached it. |
+| Loop reproduced | Pass | With the stand-in as resolver #1, `allowed5.example` timed out after 4 s. It passed through the stand-in 33 times and never reached the router. `status` still said answering. With eight background lookup loops (a busy Mac), the probe stopped answering and the panel went **Restarting protection…** → **Protection is offline** with **Restore internet**, Victor's state. |
+| Restore before the fix | **Fail, as in #54** | `main`'s `clearpath-service restore` (bf02f21) refused after 22 s: "The filter is answering. DNS was left in place." Ethernet DNS stayed `127.0.0.1`. |
+| Restore with the fix | Pass | In the same loop, **Restore internet** → one administrator prompt. Ethernet DNS went back to the recorded `192.0.2.53`, `internet-recovery.json` held one event, and the panel showed **Previous DNS settings restored / DNS filtering is off**. A fresh name resolved again (stand-in → router), as Tailscale recovers when it re-reads the interface DNS. |
+
+**Not shown here:** the panel's new failure message (the parser is tested with real `osascript` output), and a real Tailscale client.

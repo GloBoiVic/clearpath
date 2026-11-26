@@ -46,7 +46,7 @@ extension ServiceManager {
                     throw ServiceError.refused("Clearpath could not verify that system DNS uses the filter.")
                 }
                 guard !filterRecovered() else {
-                    throw ServiceError.refused("The filter is answering. DNS was left in place.")
+                    throw ServiceError.refused("Clearpath is filtering again, so DNS was left in place.")
                 }
                 _ = try recoveryLocation(original)
                 guard try allServicesUseFilter() else {

@@ -637,7 +637,7 @@ final class ServiceTests: XCTestCase {
         mac.onPause = { [unowned self] in mac.filterStarts = true }
         mac.calls.removeAll()
 
-        assertRefused({ try manager.restoreInternet() }, containing: "filter is answering")
+        assertRefused({ try manager.restoreInternet() }, containing: "Clearpath is filtering again")
         XCTAssertEqual(Set(mac.dns.values), [["127.0.0.1"]])
         XCTAssertNil(mac.index(of: "/usr/sbin/networksetup -setdnsservers"))
         XCTAssertNil(try manager.status().restoreEvent)
