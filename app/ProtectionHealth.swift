@@ -102,12 +102,15 @@ final class ProtectionHealth: ObservableObject {
     func refresh() async {
         guard !checking, !restoring else { return }
         checking = true
+        let checkStarted = clock.now
         let result = await Task.detached { FilterStatus.read() }.value
         checking = false
         guard !restoring else { return }
 
+        // A long gap before this check (sleep, a suspended app) restarts the outage clock. The
+        // check's own time doesn't count: a lookup that fails through the filter takes seconds.
         let now = clock.now
-        if let lastCheck, now - lastCheck > .seconds(4) { outageStarted = nil }
+        if let lastCheck, checkStarted - lastCheck > .seconds(4) { outageStarted = nil }
         lastCheck = now
         restoreAvailable = result?.restoreAvailable == true
         if let result, result.outage {
