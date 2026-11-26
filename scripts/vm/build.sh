@@ -8,7 +8,7 @@ root=$(cd "$here/../.." && pwd)
 out="$root/artifacts/vm-tools"
 arch="${VM_ARCH:-arm64}"
 mkdir -p "$out" "$root/artifacts/swift-module-cache"
-for tool in vm-click vm-key vm-windowid vm-typepw vm-ocr; do
+for tool in vm-click vm-key vm-windowid vm-typepw vm-ocr vm-dns-fixture; do
   swiftc -O -target "$arch-apple-macos15.0" -module-cache-path "$root/artifacts/swift-module-cache" \
     "$here/$tool.swift" -o "$out/$tool"
 done

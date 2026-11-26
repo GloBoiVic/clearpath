@@ -97,6 +97,14 @@ final class TransportTests: XCTestCase {
         do { _ = try await task.value; XCTFail("cancelled transaction must complete") }
         catch { XCTAssertTrue(error is CancellationError) }
     }
+    func testFilterResolvesOnlyWhenTheLoopbackServerAnswersALookup() throws {
+        let answering = try LocalDNSServer(tcp: false)
+        defer { answering.stop() }
+        XCTAssertTrue(MacSystem().filterResolves(port: answering.port.rawValue))
+        let silent = try LocalDNSServer(tcp: false, silent: true)
+        defer { silent.stop() }
+        XCTAssertFalse(MacSystem().filterResolves(port: silent.port.rawValue))
+    }
     func testHostnameUpstreamRejectedToPreventRecursion() async throws {
         do {
             _ = try await NetworkUpstream(endpoint: .hostPort(host: "resolver.example", port: 53)).exchange(DNSMessage.query("example.com", type: 1), tcp: false)

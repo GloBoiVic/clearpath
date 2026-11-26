@@ -25,8 +25,8 @@ struct Panel: View {
             if health.state == .restored {
                 Text("DNS filtering is off.").foregroundStyle(.secondary)
             }
-            if health.restoreFailed {
-                Text("Clearpath couldn’t confirm that DNS was restored.").foregroundStyle(.secondary)
+            if let error = health.restoreError {
+                Text(error).foregroundStyle(.secondary)
             }
             if health.state.offersRestore {
                 if health.restoreAvailable {

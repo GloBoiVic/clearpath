@@ -18,6 +18,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -109,6 +110,46 @@ class LiveFixture(Fixture):
             out.add_answer(RR(name, query.q.qtype, rdata=RD(b"\x00\x01\x00")))  # priority 1, target "."
             return out.pack()
         return super().handle(packet, tcp)
+
+
+class LoopingResolver:
+    """Stands in for a VPN resolver that became the Mac's default DNS and forwards to the
+    interface DNS, which is the filter itself (#73). Loopback only."""
+    target = None
+
+    def handle(self, packet, tcp=False):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(2)
+            sock.sendto(packet, ("127.0.0.1", self.target))
+            try:
+                return sock.recv(65535)
+            except socket.timeout:
+                out = reply(DNSRecord.parse(packet))
+                out.header.rcode = RCODE.SERVFAIL
+                return out.pack()
+
+
+def health_probe(port):
+    """The service's filterAnswers probe: a nameless query answered with FORMERR."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.settimeout(0.5)
+        sock.connect(("127.0.0.1", port))
+        sock.send(b"\xab\xcd\x01\x00" + b"\x00" * 8)
+        try:
+            answer = sock.recv(512)
+        except socket.timeout:
+            return False
+        return len(answer) >= 12 and answer[:2] == b"\xab\xcd" and answer[2] & 0x80 and answer[3] & 0x0F == RCODE.FORMERR
+
+
+def resolves(port):
+    """The service's filterResolves check: the `com` name servers answered with NOERROR within two seconds."""
+    query = DNSRecord.question("com", "NS")
+    try:
+        response = DNSRecord.parse(query.send("127.0.0.1", port, timeout=2))
+    except socket.timeout:
+        return False
+    return response.header.id == query.header.id and response.header.rcode == RCODE.NOERROR
 
 
 class PortReservationTests(unittest.TestCase):
@@ -332,6 +373,47 @@ class SwiftFilterProcess(unittest.TestCase):
                     response = self.ask(port, name, "A", tcp)
                     self.assertEqual((response.header.rcode, response.rr), (RCODE.SERVFAIL, []), (name, tcp))
             self.stop(proc)
+
+    def test_a_filter_forwarding_into_a_loop_answers_the_health_probe_but_resolves_nothing(self):
+        # The state behind #74: the nameless probe still gets answers at times, so only a
+        # real lookup (ServiceManager's filterResolves) shows the filter is not working.
+        looping = LoopingResolver()
+        resolver_port = self.stack.enter_context(serve(looping))
+        proc, port = self.launch(upstream_port=resolver_port)
+        looping.target = port
+        answers, stop = [], threading.Event()
+
+        def browse():
+            for index in range(1000):
+                if stop.is_set():
+                    return
+                query = DNSRecord.question(f"site{index}.example")
+                try:
+                    answers.append(DNSRecord.parse(query.send("127.0.0.1", resolver_port, timeout=5)).header.rcode)
+                except socket.timeout:
+                    answers.append(None)
+
+        browser = threading.Thread(target=browse, daemon=True)
+        browser.start()
+        self.addCleanup(browser.join, 10)
+        self.addCleanup(stop.set)
+        probes, lookups = [], []
+        for _ in range(4):
+            probes += [health_probe(port) for _ in range(8)]
+            lookups.append(resolves(port))
+        stop.set()
+        self.assertTrue(answers)
+        self.assertNotIn(RCODE.NOERROR, answers)
+        self.assertIn(True, probes)
+        self.assertEqual(lookups, [False] * 4)
+        proc.kill()
+
+    def test_the_resolution_check_succeeds_through_a_working_filter(self):
+        proc, port = self.launch()
+        self.assertTrue(health_probe(port))
+        self.assertTrue(resolves(port))
+        self.assertEqual(self.fixture.calls, [("com.", QTYPE.NS, False)])
+        self.stop(proc)
 
     def test_malformed_or_mismatched_upstream_replies_are_servfail(self):
         proc, port = self.launch()
