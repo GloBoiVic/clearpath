@@ -13,7 +13,7 @@ public extension DNSUpstream {
 /// Names only Clearpath answers (#76). The status check asks the Mac's default resolver for a
 /// fresh one: if this TXT marker comes back, that resolver sends lookups through Clearpath.
 public enum FilterCheck {
-    public static let suffix = "clearpath-check.example"
+    public static let suffix = "resolver-check.example"
     /// One TXT string, "clearpath".
     public static let marker: [UInt8] = [9] + Array("clearpath".utf8)
 }

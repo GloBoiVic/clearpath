@@ -484,12 +484,12 @@ class SwiftFilterProcess(unittest.TestCase):
         # #76: a VPN in front of Clearpath is proven to forward to it when this marker comes back.
         proc, port = self.launch()
         for tcp in (False, True):
-            response = self.ask(port, "5e1d0c.clearpath-check.example", "TXT", tcp)
+            response = self.ask(port, "5e1d0c.resolver-check.example", "TXT", tcp)
             self.assertEqual(response.header.rcode, RCODE.NOERROR)
             self.assertEqual([str(rr.rdata) for rr in response.rr], ['"clearpath"'])
             self.assertEqual(response.rr[0].ttl, 0)
         self.assertEqual(self.fixture.calls, [])
-        self.assertNotIn("clearpath-check", self.stop(proc))
+        self.assertNotIn("resolver-check", self.stop(proc))
 
     def test_lookups_from_many_new_source_ports_are_all_answered(self):
         # A VPN resolver in front of the filter (#73) sends each lookup from a new port. Idle

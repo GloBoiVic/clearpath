@@ -115,12 +115,12 @@ final class ResolverTests: XCTestCase {
         let notices = LockedValue(0)
         let resolver = Resolver(policy: try examplePolicy(), onBlocked: { notices.update { $0 += 1 } }), fixture = Fixture()
         for tcp in [false, true] {
-            let check = try DNSMessage(await resolver.resolve(DNSMessage.query("3f9a1c.Clearpath-Check.example", type: 16), tcp: tcp, upstream: fixture))
+            let check = try DNSMessage(await resolver.resolve(DNSMessage.query("3f9a1c.Resolver-Check.example", type: 16), tcp: tcp, upstream: fixture))
             XCTAssertEqual(check.rcode, 0)
             XCTAssertEqual(check.answers.map(\.type), [16])
             XCTAssertEqual(check.answers.first?.data, FilterCheck.marker)
             XCTAssertEqual(check.answers.first?.ttl, 0)
-            let other = try DNSMessage(await resolver.resolve(DNSMessage.query("3f9a1c.clearpath-check.example", type: 1), tcp: tcp, upstream: fixture))
+            let other = try DNSMessage(await resolver.resolve(DNSMessage.query("3f9a1c.resolver-check.example", type: 1), tcp: tcp, upstream: fixture))
             XCTAssertEqual(other.rcode, 0); XCTAssertTrue(other.answers.isEmpty)
         }
         let calls = await fixture.calls; XCTAssertTrue(calls.isEmpty)
