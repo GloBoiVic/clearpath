@@ -118,5 +118,6 @@ Menu-bar panel. SwiftUI screen in `app/Clearpath.swift`. Approved by Victor on 2
 | Setup Partners section, solo warning and acknowledgement, partner change controls, and partner-change email copy, as written above and in `clearpath/partner-copy.json` | Victor approved as drafted on 2026-11-25 | Finishes setup with or without a partner and changes an accepted partner through approval |
 | Panel opens below the menu bar, extending right from the shield, and flips left near the screen edge | Victor chose on 2026-11-22 | Opens beside the shield rather than straight down, without covering the menu bar |
 | Settings windows close with Cmd-W, not Escape, and Escape is silent | Victor decided on 2026-11-22 | Follows the Mac convention and avoids losing a half-typed partner email |
+| **Protection is on through your VPN** and **Your VPN is bypassing Clearpath** with its note, and the matching setup status lines, as written in `app/ProtectionHealth.swift` (#76) | Victor approved the exact text on 2026-11-26 | Says truthfully whether a VPN in front of Clearpath keeps filtering on |
 
 Approved by Victor on 2026-11-21.
