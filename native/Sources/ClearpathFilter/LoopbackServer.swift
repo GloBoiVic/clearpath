@@ -91,11 +91,20 @@ final class LoopbackServer: @unchecked Sendable {
         var stream = DNSStream()
         var timer: DispatchSourceTimer?
         var busy = 0  // lookups in progress (each bounded by the upstream deadline); idle never closes these
+        var lastActive = DispatchTime.now()
         init(connection: NWConnection, tcp: Bool) { self.connection = connection; self.tcp = tcp }
     }
 
     private func accept(_ connection: NWConnection, tcp: Bool) {
-        guard connections.count < Self.maxConnections else { connection.cancel(); return }
+        // A full table makes room by closing the longest-idle client. A resolver in front of the
+        // filter, such as a VPN's (#73), sends each lookup from a new port, and those answered
+        // clients would otherwise hold every slot for the idle timeout.
+        if connections.count >= Self.maxConnections {
+            guard let idle = connections.filter({ $0.value.busy == 0 }).min(by: { $0.value.lastActive < $1.value.lastActive }) else {
+                connection.cancel(); return
+            }
+            close(idle.key)
+        }
         let client = Client(connection: connection, tcp: tcp)
         let key = ObjectIdentifier(connection)
         connections[key] = client
@@ -118,6 +127,7 @@ final class LoopbackServer: @unchecked Sendable {
     }
 
     private func touch(_ client: Client, key: ObjectIdentifier) {
+        client.lastActive = DispatchTime.now()
         client.timer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.setEventHandler { [weak self] in

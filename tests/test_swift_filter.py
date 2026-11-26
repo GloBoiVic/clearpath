@@ -480,6 +480,23 @@ class SwiftFilterProcess(unittest.TestCase):
         self.assertEqual(self.fixture.calls, [])
         self.stop(proc)
 
+    def test_lookups_from_many_new_source_ports_are_all_answered(self):
+        # A VPN resolver in front of the filter (#73) sends each lookup from a new port. Idle
+        # clients must make room for new ones rather than turning them away for ten seconds.
+        proc, port = self.launch()
+        unanswered = []
+        for index in range(100):
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.settimeout(1)
+                sock.sendto(DNSRecord.question(f"flow{index}.example").pack(), ("127.0.0.1", port))
+                try:
+                    sock.recv(4096)
+                except socket.timeout:
+                    unanswered.append(index)
+        self.assertEqual(unanswered, [])
+        self.assertTrue(health_probe(port))
+        self.stop(proc)
+
     def test_tcp_pipelined_queries_answered_in_order(self):
         proc, port = self.launch()
         queries = [DNSRecord.question(name) for name in ("adult.example", "github.com", "www.google.com")]
