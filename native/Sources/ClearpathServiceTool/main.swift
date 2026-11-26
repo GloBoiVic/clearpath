@@ -26,7 +26,7 @@ usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--
   site-removals prints the installed service's removal requests as JSON.
   record-partner-pairing tells the installed service this Mac uses a partner service, ending solo removals.
   refresh-community-list checks the weekly community list schedule as root.
-  browser-profile writes Clearpath's removable Chrome and Firefox profile to standard output.
+  browser-profile writes Clearpath's removable Safari, Chrome and Firefox profile to standard output.
 
 """
 

@@ -176,7 +176,7 @@ Every guest administrator prompt, `sudo`, DNS change, profile, public lookup and
 | Chrome, normal and Incognito | Pass | `pornhub.com`: `DNS_PROBE_FINISHED_NXDOMAIN`. Google: "Filtering on", can't change, URL rewritten to `safe=active`. Bing: "requires a strict Bing SafeSearch setting". DuckDuckGo: no SafeSearch control. `example.com`, `wikipedia.org` and `apple.com` loaded. |
 | Firefox, normal and private | Pass | Same results. Firefox 161 words a DNS failure as "Could not connect to the server" (it says the same for the locally blocked `example.org`). Its DNS cache held `www.pornhub.com` with no address. |
 | Safari, normal window | Pass | `pornhub.com`: "Safari Can't Find the Server". SafeSearch was forced on all three engines, and ordinary sites loaded. |
-| **Safari, private window** | **Fail (#61)** | Clearpath had no effect: `pornhub.com` loaded its age-gate page, the locally blocked `example.org` loaded, Google SafeSearch showed off, Bing offered Moderate and DuckDuckGo showed "Safe search: off". With Safari's "Use advanced tracking and fingerprinting protection" (on in Private Browsing by default) turned off, a private window failed `example.org` like a normal window. |
+| **Safari, private window** | **Fail (fixed in #61, below)** | Clearpath had no effect: `pornhub.com` loaded its age-gate page, the locally blocked `example.org` loaded, Google SafeSearch showed off, Bing offered Moderate and DuckDuckGo showed "Safe search: off". With Safari's "Use advanced tracking and fingerprinting protection" (on in Private Browsing by default) turned off, a private window failed `example.org` like a normal window. |
 | SafeSearch DNS | Pass, one gap | `www.google.com` and `google.com` → `forcesafesearch.google.com`. `www.bing.com` and `bing.com` → `strict.bing.com`. `duckduckgo.com` → `safe.duckduckgo.com`. **`www.duckduckgo.com` → SERVFAIL (#60)**: it is a CNAME of `duckduckgo.com` and the default policy doesn't map it, so the filter fails closed. |
 | Add a block from the menu bar | Pass | **Block a site** → `example.org`. About a second later `example.org` and `www.example.org` went from NOERROR to NXDOMAIN. The block survived a power loss and a reboot. |
 | **Removal request (solo seven-day rule)** | **Fail (#59)** | The panel showed **Pending requests: Unavailable**. **Request removal** created nothing, and `clearpath-service request-site-removal` said "Site removal requests need a configured pairing service." (exit 2). The block stayed. |
@@ -222,3 +222,31 @@ If something goes wrong, use the first step that works:
 4. **Check:** compare `scutil --dns` with `~/Desktop/clearpath-dns-before.txt`, and confirm that ordinary sites load.
 
 Each of these steps on Victor's Mac is a Hard stop: he runs it himself after saying yes in chat.
+
+# Safari private windows in a disposable VM — 2026-11-26
+
+Issue #61 looked for a way to stop Safari private windows bypassing Clearpath (#53). VM: `clearpath-61-safari`, a Tart 2.41.1 clone of the pinned image (macOS 26.6.2, 25G83, Safari 26.6.2), no Apple Account. Clearpath was built from `main` at 255cec2 and installed from the setup window, with `example.org` blocked from the menu bar. Every VM step had Victor's approval. Victor's Mac was not changed. Only the #53 domains were visited. The one adult domain, `pornhub.com` from the adult list, was visited once, in a private window with the final profile installed, after the fix already blocked `example.org`.
+
+**What a profile can do without an MDM server:**
+
+| Option | Result |
+|---|---|
+| Turn off Safari Private Browsing | **Not possible.** Apple's `AllowPrivateBrowsing` (declaration `com.apple.configuration.safari.settings`, macOS 26) is MDM-only with supervision; Apple lists local enrollment as N/A. The older restriction `allowSafariPrivateBrowsing=false` in a `com.apple.applicationaccess` payload shows as "Allow Private Browsing in Safari: False", but the install fails: "One or more keys in the payload must be installed from a Mobile Device Management server." |
+| Turn off "Use advanced tracking and fingerprinting protection" | **Possible.** Apple doesn't document it. Safari reads `EnableEnhancedPrivacyInPrivateBrowsing` and `EnableEnhancedPrivacyInRegularBrowsing` from `com.apple.Safari`, and a forced managed-preferences payload installs through Device Management. |
+
+Victor chose to lock only the private key (#61). With only `EnableEnhancedPrivacyInPrivateBrowsing` forced to false:
+
+| Check | Result | Observed |
+|---|---|---|
+| Baseline, no profile | Fail, as #53 | A private window loaded the blocked `example.org`. |
+| Private window | Pass | `example.org`: "Safari Can't Find the Server". Google: "Filtering on", can't change. Bing: "requires a strict Bing SafeSearch setting". DuckDuckGo: no "Safe search: off" control. `example.com` loaded. |
+| Safari settings | Locked | Settings → Advanced shows "Use advanced tracking and fingerprinting protection" unchecked and dimmed. Neither the checkbox nor the menu responds, so the user can't choose "in all browsing". Settings → Privacy: Prevent cross-site tracking and Hide IP address from trackers stay on and can be changed. |
+| Normal window with the user's own regular key on | Pass | The regular key was set to true as the guest user (`defaults write`), and Settings then read "in all browsing", still dimmed. `example.org` and a never-visited `www.example.org` failed, and SafeSearch was forced on all three engines. |
+| Control: same user setting, no profile | **Fail** | A normal window loaded `example.org`. On a Mac without the profile, protection set to "in all browsing" bypasses Clearpath in normal windows too. |
+| Adult-list domain, final build | Pass | In a private window, `pornhub.com` showed "Safari Can't Find the Server". The filter answered NXDOMAIN. The profile was then removed. |
+| Final build (8ac02db) | Pass | Device Management showed the new description and installed `io.clearpath.browser-policy.v1` with three payloads. `/Library/Managed Preferences/admin/com.apple.Safari.plist` held only `EnableEnhancedPrivacyInPrivateBrowsing` false. Private and normal windows passed the checks above. The profile was then removed. |
+
+One normal-window load of `http://example.org/` succeeded with the final build because Safari served it from its HTTP cache: that page had been loaded in a normal window during the control run. The same URL with a query string, and `www.example.org`, failed, and the system resolver answered NXDOMAIN. Cached pages outliving a new block is the known DNS limit in [ARCHITECTURE.md](ARCHITECTURE.md#privacy-lists-and-operational-limits). Private windows keep no disk cache.
+
+**What Safari private browsing covers now:** with Clearpath Browser Policies installed, private windows use the system DNS path, so blocked sites fail and SafeSearch is forced as in normal windows. The cost: Safari treats its advanced tracking and fingerprinting protection as off in every window, and the user can't turn it on while the profile is installed. **Not covered:** Private Browsing can't be turned off, and a Mac without the profile is still bypassed in private windows. **Not tested:** iCloud Private Relay (no Apple Account in the VM), other Safari versions, and the new setup-window copy (the guest ran the app from `main`; the copy was type-checked but not viewed).
+

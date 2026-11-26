@@ -3,7 +3,7 @@ import XCTest
 @testable import ClearpathService
 
 final class BrowserProfileTests: XCTestCase {
-    func testProfileManagesBrowserDNSAndChromeSafeSearchAndCanBeRemovedByIdentifier() throws {
+    func testProfileManagesBrowserDNSChromeSafeSearchAndSafariPrivateTrackingProtection() throws {
         let data = try BrowserProfile.configuration()
         XCTAssertEqual(data, try BrowserProfile.configuration())
         let profile = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
@@ -13,9 +13,9 @@ final class BrowserProfileTests: XCTestCase {
         XCTAssertEqual(profile["PayloadRemovalDisallowed"] as? Bool, false)
 
         let payloads = try XCTUnwrap(profile["PayloadContent"] as? [[String: Any]])
-        XCTAssertEqual(payloads.count, 2)
+        XCTAssertEqual(payloads.count, 3)
         let uuids = ([profile] + payloads).compactMap { $0["PayloadUUID"] as? String }
-        XCTAssertEqual(Set(uuids).count, 3)
+        XCTAssertEqual(Set(uuids).count, 4)
         let chrome = try settings(for: "com.google.Chrome", in: payloads)
         XCTAssertEqual(Set(chrome.keys), ["DnsOverHttpsMode", "ForceGoogleSafeSearch"])
         XCTAssertEqual(chrome["DnsOverHttpsMode"] as? String, "off")
@@ -26,6 +26,10 @@ final class BrowserProfileTests: XCTestCase {
             "DNSOverHTTPS__Enabled": false,
             "DNSOverHTTPS__Locked": true
         ])
+        // With this protection on, Safari private windows bypassed the system DNS path (#61).
+        // Only the private key is managed; regular browsing stays unmanaged (Victor, 2026-11-26).
+        let safari = try settings(for: "com.apple.Safari", in: payloads)
+        XCTAssertEqual(safari as? [String: Bool], ["EnableEnhancedPrivacyInPrivateBrowsing": false])
     }
 
     private func settings(for domain: String, in payloads: [[String: Any]]) throws -> [String: Any] {
