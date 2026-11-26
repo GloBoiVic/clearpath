@@ -62,7 +62,7 @@ struct UninstallView: View {
             case .completed("removed"):
                 let alert = NSAlert()
                 alert.messageText = "Clearpath was uninstalled"
-                alert.informativeText = "Your previous DNS settings were restored. Restart Chrome and Firefox if they were open."
+                alert.informativeText = "Your previous DNS settings were restored. Restart Chrome, Brave and Firefox if they were open."
                 alert.addButton(withTitle: "Done")
                 alert.runModal()
                 NSApp.terminate(nil)

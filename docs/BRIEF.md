@@ -56,7 +56,9 @@ V1 runs on Victor's Mac only. He keeps his admin account. The diagram is `docs/a
 
 **The app.** A menu-bar app with no Dock icon. The icon shows that protection is on and whether a partner is connected; its panel shows status, "Block a site" and pending requests. It opens windows for setup, the blocked-sites list, partner settings and uninstall. The filter keeps running when the menu-bar app is quit.
 
-**V1 browsers:** Safari, Chrome and Firefox.
+**V1 browsers:** Safari, Chrome, Brave and Firefox.
+
+**How far the browser locks go.** Clearpath puts friction between the user and adult sites in normal use, enough time to rethink. It is not a wall against deliberate bypass. The browser locks cover the default and secure-DNS paths of mainstream browsers, and Clearpath doesn't keep widening them. Out of scope: a browser setting deliberately changed to get around Clearpath, VPNs and Tor Browser. Brave's own Tor windows are turned off because Brave offers them by default; its regular private windows stay. Victor, 2026-11-26: "Stop widening the lock... as long as it works on most browsers."
 
 ## Not in V1
 
@@ -66,6 +68,7 @@ V1 runs on Victor's Mac only. He keeps his admin account. The diagram is `docs/a
 - The community for finding a partner. Onboarding recommends asking a trusted friend.
 - YouTube Restricted Mode, and blocking adult content inside mixed sites without blocking the whole site.
 - Any pause or temporary off switch.
+- Blocking encrypted-DNS servers (dropped on 2026-11-26).
 
 ## Data
 
@@ -75,7 +78,7 @@ V1 runs on Victor's Mac only. He keeps his admin account. The diagram is `docs/a
 
 ## Done when
 
-On Victor's Mac, for a full day of normal use: Safari, Chrome and Firefox get blocked sites blocked and SafeSearch forced, while development tools, VPNs and local networking work as before. A removal request reaches the partner by email and is applied only after approval or 7 days. Each alert trigger reaches the partner. Uninstall restores the Mac cleanly. All of this is proven in a disposable macOS VM before it touches Victor's Mac.
+On Victor's Mac, for a full day of normal use: Safari, Chrome, Brave and Firefox get blocked sites blocked and SafeSearch forced, while development tools, VPNs and local networking work as before. A removal request reaches the partner by email and is applied only after approval or 7 days. Each alert trigger reaches the partner. Uninstall restores the Mac cleanly. All of this is proven in a disposable macOS VM before it touches Victor's Mac.
 
 ## What the code does today
 

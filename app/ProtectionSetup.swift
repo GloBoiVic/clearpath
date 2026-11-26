@@ -25,7 +25,7 @@ struct ProtectionSetup: View {
                     Text("iCloud Private Relay can bypass Clearpath in Safari. If it’s on, turn it off in System Settings under your Apple Account → iCloud → Private Relay.")
                 }
                 Section("Browser profile") {
-                    Text("Open the Clearpath browser profile from Finder, then approve it in System Settings → General → Device Management. It covers Safari, Chrome and Firefox.")
+                    Text("Open the Clearpath browser profile from Finder, then approve it in System Settings → General → Device Management. It covers Safari, Chrome, Brave and Firefox.")
                     if let profile {
                         Button("Show browser profile in Finder") {
                             NSWorkspace.shared.activateFileViewerSelecting([profile])
@@ -34,7 +34,7 @@ struct ProtectionSetup: View {
                         Text("The Clearpath browser profile is missing from this build.")
                             .foregroundStyle(.secondary)
                     }
-                    Text("Restart Safari, Chrome and Firefox. In Safari, Settings → Advanced shows “Use advanced tracking and fingerprinting protection” off and dimmed, so Clearpath also filters private windows. Prevent cross-site tracking stays on. In Chrome, open chrome://policy and verify DnsOverHttpsMode is off and ForceGoogleSafeSearch is true. In Firefox, open about:policies and verify DNSOverHTTPS is disabled and locked.")
+                    Text("Restart Safari, Chrome, Brave and Firefox. In Safari, Settings → Advanced shows “Use advanced tracking and fingerprinting protection” off and dimmed, so Clearpath also filters private windows. Prevent cross-site tracking stays on. In Chrome, open chrome://policy and verify DnsOverHttpsMode is off and ForceGoogleSafeSearch is true. In Brave, open brave://policy and verify the same two, and that TorDisabled is true. In Firefox, open about:policies and verify DNSOverHTTPS is disabled and locked.")
                         .textSelection(.enabled)
                     Text("To undo this step, remove only Clearpath Browser Policies in Device Management, then restart the browsers.")
                         .foregroundStyle(.secondary)

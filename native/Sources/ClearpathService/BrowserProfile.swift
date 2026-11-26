@@ -18,6 +18,17 @@ public enum BrowserProfile {
                 ]
             ),
             preferencesPayload(
+                domain: "com.brave.Browser", suffix: "brave",
+                uuid: "7A5A5B23-E1D2-5C8B-9B64-EDD75558310C",
+                name: "Clearpath Brave settings",
+                settings: [
+                    // Brave reads Chromium's policies. Its Tor windows resolve names through Tor, so they are off.
+                    "DnsOverHttpsMode": "off",
+                    "ForceGoogleSafeSearch": true,
+                    "TorDisabled": true
+                ]
+            ),
+            preferencesPayload(
                 domain: "org.mozilla.firefox", suffix: "firefox",
                 uuid: "9C6A5945-36DB-5678-B285-FD08B9BD1568",
                 name: "Clearpath Firefox settings",
@@ -47,7 +58,7 @@ public enum BrowserProfile {
             "PayloadVersion": 1,
             "PayloadDisplayName": name,
             "PayloadOrganization": "Clearpath",
-            "PayloadDescription": "Turns off Chrome and Firefox Secure DNS, forces Google SafeSearch in Chrome, and turns off Safari's advanced tracking and fingerprinting protection so Clearpath also filters Safari private windows.",
+            "PayloadDescription": "Turns off Chrome, Brave and Firefox Secure DNS, forces Google SafeSearch in Chrome and Brave, turns off Brave's Tor windows, and turns off Safari's advanced tracking and fingerprinting protection so Clearpath also filters Safari private windows.",
             "PayloadScope": "System",
             "PayloadRemovalDisallowed": false,
             "PayloadContent": preferences
