@@ -277,8 +277,23 @@ Issue #74: during #54 a Tailscale DNS loop took Victor's Mac offline, and **Rest
 | Check | Result | Evidence |
 |---|---|---|
 | Before the loop | Pass | `status` showed answering, DNS on the filter and the filter as default resolver. `allowed3.example` resolved through the router fixture; `adult.example` failed and never reached it. |
-| Loop reproduced | Pass | With the stand-in as resolver #1, `allowed5.example` timed out after 4 s. It passed through the stand-in 33 times and never reached the router. `status` still said answering. With eight background lookup loops (a busy Mac), the probe stopped answering and the panel went **Restarting protection…** → **Protection is offline** with **Restore internet**, Victor's state. |
+| Loop reproduced | Pass | With the stand-in as resolver #1, `allowed5.example` timed out after 4 s. It passed through the stand-in 33 times and never reached the router. `status` still said answering. With eight background lookup loops (a busy Mac), the probe stopped answering and the panel went **Restarting protection…** → **Protection is offline** with **Restore internet**, Victor's state. (#73 later showed that this much load fills the filter's client table even without a loop; that limit is fixed there.) |
 | Restore before the fix | **Fail, as in #54** | `main`'s `clearpath-service restore` (bf02f21) refused after 22 s: "The filter is answering. DNS was left in place." Ethernet DNS stayed `127.0.0.1`. |
 | Restore with the fix | Pass | In the same loop, **Restore internet** → one administrator prompt. Ethernet DNS went back to the recorded `192.0.2.53`, `internet-recovery.json` held one event, and the panel showed **Previous DNS settings restored / DNS filtering is off**. A fresh name resolved again (stand-in → router), as Tailscale recovers when it re-reads the interface DNS. |
 
 **Not shown here:** the panel's new failure message (the parser is tested with real `osascript` output), and a real Tailscale client.
+
+# VPN default resolver without a loop in a disposable VM — 2026-11-26
+
+Issue #73, same clone and fixtures as the #74 run above, with builds from the #73 branch. The Tailscale stand-in was resolver #1 and the global DNS, forwarding ordinary names to the primary service's configured DNS (`127.0.0.1`, Clearpath), as Tailscale does. Victor approved the VM steps (2026-11-26). Victor's Mac was not changed.
+
+| Check | Result | Evidence |
+|---|---|---|
+| VPN → Clearpath → router | Pass | `allowed73.example` → `192.0.2.42`. The stand-in forwarded it once to `127.0.0.1` and the router answered it once: no loop. |
+| Filtering through the VPN | Pass | `adult.example` and `www.adult.example` failed; the stand-in forwarded them to Clearpath and the router never saw them. |
+| VPN names | Pass | `host.tailnet.example` → `100.64.0.7`, answered by the stand-in itself. |
+| Under load | Pass after a fix | The first #73 build stopped answering the health probe with two background lookup loops, and a lookup timed out: each lookup the stand-in forwards comes from a new port, and answered clients held all 64 client slots for 10 s. The same happened with no VPN under eight loops. With idle clients now closed to make room, the probe answered every check at two and eight loops, fresh lookups took 10 ms, and about 9,200 lookups each crossed the stand-in and the router once. |
+| A remaining loop is detected | Pass | The stand-in was made the primary service and pointed at `127.0.0.1`, as a full-tunnel VPN that forwards to the interface DNS would be. Lookups failed; `status` reported the filter answering with `lookupsFailThroughFilter: true`. The panel went **Protection is offline**; **Restore internet** + one administrator prompt restored Ethernet DNS to `192.0.2.53` with one event, and the panel showed **Previous DNS settings restored / DNS filtering is off**. The first build of this check stayed on **Restarting protection…** because the slower status check reset the outage clock; fixed before this run. |
+| Cleanup | Pass | Uninstall removed Clearpath's files and job; Ethernet DNS went back to automatic and `scutil --dns` matched the pre-run baseline. |
+
+**Not shown here:** a real Tailscale client (with or without an exit node), Wi-Fi, and the panel while a VPN is the default and everything works: it shows **Protection status unknown**, because Clearpath can't see whether the VPN forwards to it.
