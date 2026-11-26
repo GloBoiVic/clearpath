@@ -199,8 +199,9 @@ Not shown here: vendor VPN clients, Wi-Fi, real Mac sleep, iCloud Private Relay 
 Before installing, save the current DNS state with read-only commands:
 
 ```sh
-networksetup -listallnetworkservices > ~/Desktop/clearpath-dns-before.txt
-networksetup -getdnsservers "Wi-Fi" >> ~/Desktop/clearpath-dns-before.txt   # repeat for each service listed
+networksetup -listallnetworkservices | tail -n +2 | while IFS= read -r s; do
+  s=${s#\*}; echo "== $s"; networksetup -getdnsservers "$s"
+done > ~/Desktop/clearpath-dns-before.txt
 scutil --dns >> ~/Desktop/clearpath-dns-before.txt
 ```
 
