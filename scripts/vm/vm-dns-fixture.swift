@@ -1,4 +1,5 @@
-// vm-dns-fixture: a synthetic DNS resolver for the disposable VM. Never forwards to a public server.
+// vm-dns-fixture: a synthetic DNS resolver for the disposable VM. Run `vpn` without a TARGET only in
+// the VM, where the configured DNS is itself a synthetic fixture; it forwards to that DNS.
 // Usage: vm-dns-fixture answer IP PORT
 //          answers every A question with 192.0.2.42 and anything else with an empty NOERROR.
 //        vm-dns-fixture vpn IP PORT SUFFIX [TARGET-IP TARGET-PORT]

@@ -37,6 +37,9 @@ public protocol SystemControl {
     /// True when the DNS server on loopback resolves a real lookup within two seconds. The
     /// question is the `com` name servers, which every working resolver answers.
     func filterResolves(port: UInt16) -> Bool
+    /// True when the resolvers Restore internet would hand back (each recorded service's saved
+    /// or negotiated DNS) answer the same lookup directly within two seconds.
+    func networkResolves(_ record: RecoveryRecord) -> Bool
     func pause(seconds: Double)
 }
 
@@ -128,6 +131,24 @@ public struct MacSystem: SystemControl {
         return response.rcode == 0
     }
 
+    public func networkResolves(_ record: RecoveryRecord) -> Bool {
+        guard let network = try? NetworkDNS(record: record, listenPort: ServiceManager.listenPort, timeout: 2) else { return false }
+        return Self.resolves(through: network.networkResolver())
+    }
+
+    /// The `com` name servers answered with NOERROR within three seconds.
+    static func resolves(through upstream: any DNSUpstream) -> Bool {
+        guard let query = try? DNSMessage(DNSMessage.query("com", type: 2)) else { return false }
+        let answered = Answered()
+        let done = DispatchSemaphore(value: 0)
+        Task {
+            if let wire = try? await upstream.exchange(query.wire, tcp: false), let response = try? DNSMessage(wire),
+               (try? response.validateResponse(to: query)) != nil, response.rcode == 0 { answered.set() }
+            done.signal()
+        }
+        return done.wait(timeout: .now() + 3) == .success && answered.value
+    }
+
     public func pause(seconds: Double) { Thread.sleep(forTimeInterval: seconds) }
 
     private func canBind(_ type: Int32, port: UInt16) -> Bool {
@@ -148,4 +169,11 @@ public struct MacSystem: SystemControl {
         address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
         return address
     }
+}
+
+private final class Answered: @unchecked Sendable {
+    private let lock = NSLock()
+    private var answered = false
+    var value: Bool { lock.lock(); defer { lock.unlock() }; return answered }
+    func set() { lock.lock(); answered = true; lock.unlock() }
 }

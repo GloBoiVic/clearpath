@@ -18,10 +18,17 @@ struct FilterStatus: Decodable, Sendable {
     let answering: Bool
     let dnsPointsToFilter: Bool
     let defaultResolverUsesFilter: Bool?
+    let lookupsFailThroughFilter: Bool?
     let recovery: Recovery?
     let restoreAvailable: Bool?
     let setupInstallAvailable: Bool?
     let communityList: CommunityList?
+
+    /// The filter is down, or it runs but lookups through it fail while the network's own
+    /// resolver works, as in a VPN DNS loop (#73). Either way Restore internet can help.
+    var outage: Bool {
+        installed && dnsPointsToFilter && recovery == nil && (!answering || lookupsFailThroughFilter == true)
+    }
 
     var protected: Bool {
         installed && daemonLoaded && pid != nil && answering && dnsPointsToFilter
@@ -95,15 +102,18 @@ final class ProtectionHealth: ObservableObject {
     func refresh() async {
         guard !checking, !restoring else { return }
         checking = true
+        let checkStarted = clock.now
         let result = await Task.detached { FilterStatus.read() }.value
         checking = false
         guard !restoring else { return }
 
+        // A long gap before this check (sleep, a suspended app) restarts the outage clock. The
+        // check's own time doesn't count: a lookup that fails through the filter takes seconds.
         let now = clock.now
-        if let lastCheck, now - lastCheck > .seconds(4) { outageStarted = nil }
+        if let lastCheck, checkStarted - lastCheck > .seconds(4) { outageStarted = nil }
         lastCheck = now
         restoreAvailable = result?.restoreAvailable == true
-        if let result, result.installed, result.dnsPointsToFilter, !result.answering, result.recovery == nil {
+        if let result, result.outage {
             let started = outageStarted ?? now
             outageStarted = started
             updateState(now - started >= .seconds(10) ? .offline : .restarting)

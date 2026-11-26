@@ -142,6 +142,53 @@ final class TransportTests: XCTestCase {
         }
     }
 
+    func testAVPNDefaultResolverIsSkippedForOrdinaryNamesSoTheyReachTheNetworkResolver() async throws {
+        // #73: the VPN would send these names straight back to the filter.
+        let router = try LocalDNSServer(tcp: false)
+        defer { router.stop() }
+        let vpn = try LocalDNSServer(tcp: false, ipv6: true, answerAddress: [100, 64, 0, 7])
+        defer { vpn.stop() }
+        let record = RecoveryRecord(createdAt: "", services: [], upstream: "192.0.2.1",
+                                    upstreamPort: router.port.rawValue, resolverState: "")
+        let vpnScope: [String: Any] = ["ServerAddresses": ["::1"], "ServerPort": Int(vpn.port.rawValue)]
+        let upstream = NetworkDNS(record: record, listenPort: 53, timeout: 0.5) {
+            ["State:/Network/Global/DNS": vpnScope,
+             "State:/Network/Global/IPv4": ["PrimaryService": "ethernet"],
+             "State:/Network/Service/ethernet/DNS": ["ServerAddresses": ["127.0.0.1"]],
+             "State:/Network/Service/tunnel/DNS": vpnScope.merging(["SupplementalMatchDomains": ["", "tailnet.example"]]) { $1 }]
+        }
+        let ordinary = try DNSMessage(await upstream.exchange(DNSMessage.query("public.example", type: 1), tcp: false))
+        XCTAssertEqual(ordinary.answers.first?.data, [192, 0, 2, 42])
+        let vpnName = try DNSMessage(await upstream.exchange(DNSMessage.query("host.tailnet.example", type: 1), tcp: false))
+        XCTAssertEqual(vpnName.answers.first?.data, [100, 64, 0, 7])
+    }
+
+    func testTheNetworkResolverCheckAsksTheRecordedServiceNotAVPNRoute() throws {
+        let router = try LocalDNSServer(tcp: false)
+        defer { router.stop() }
+        let silent = try LocalDNSServer(tcp: false, silent: true)
+        defer { silent.stop() }
+        // The VPN is the primary service and swallows everything; Ethernet is what Clearpath recorded.
+        func network(_ port: NWEndpoint.Port, ethernetActive: Bool = true) -> NetworkDNS {
+            let record = RecoveryRecord(createdAt: "", services: [ServiceDNS(name: "Ethernet", servers: [], id: "ethernet")],
+                                        upstream: "192.0.2.1", upstreamPort: port.rawValue, resolverState: "")
+            return NetworkDNS(record: record, listenPort: 53, timeout: 0.5) {
+                var state: [String: [String: Any]] = [
+                    "State:/Network/Global/DNS": ["ServerAddresses": ["::1"], "ServerPort": Int(silent.port.rawValue)],
+                    "State:/Network/Global/IPv4": ["PrimaryService": "vpn"],
+                    "State:/Network/Service/vpn/IPv4": ["InterfaceName": "lo0"],
+                    "State:/Network/Service/vpn/DNS": ["ServerAddresses": ["::1"], "SupplementalMatchDomains": [""]],
+                    "State:/Network/Service/ethernet/DNS": ["ServerAddresses": ["127.0.0.1"]],
+                ]
+                if ethernetActive { state["State:/Network/Service/ethernet/IPv4"] = ["InterfaceName": "lo0"] }
+                return state
+            }
+        }
+        XCTAssertTrue(MacSystem.resolves(through: network(router.port).networkResolver()))
+        XCTAssertFalse(MacSystem.resolves(through: network(silent.port).networkResolver()))
+        XCTAssertFalse(MacSystem.resolves(through: network(router.port, ethernetActive: false).networkResolver()))
+    }
+
     func testPrivateTCPRetryUsesTheSameScopeWhenTheNetworkChanges() async throws {
         let standard = try LocalDNSServer(tcp: true)
         defer { standard.stop() }

@@ -52,6 +52,35 @@ public final class NetworkDNS: DNSUpstream, @unchecked Sendable {
         })
     }
 
+    /// The resolvers Restore internet would hand back: each recorded service's saved manual DNS
+    /// or, for automatic DNS, its negotiated servers, for each active service, primary first.
+    /// As on the ordinary route, the interface only qualifies link-local addresses. Unlike
+    /// `forQuestion`, this never follows a VPN's scopes, so it shows whether going around
+    /// Clearpath would work even when the filter's own route loops.
+    public func networkResolver() -> any DNSUpstream {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let state = readState(), let port = NWEndpoint.Port(rawValue: self.port), self.port > 0 else {
+            return SelectedRoute(upstreams: [])
+        }
+        let primary = ["IPv4", "IPv6"].compactMap { state["State:/Network/Global/" + $0]?["PrimaryService"] as? String }
+        let ids = saved.keys.sorted { (primary.contains($0) ? 0 : 1, $0) < (primary.contains($1) ? 0 : 1, $1) }
+        var targets: [NWEndpoint] = []
+        var seen = Set<NWEndpoint.Host>()
+        for id in ids {
+            let key = "State:/Network/Service/" + id
+            let name = state[key + "/IPv4"]?["InterfaceName"] as? String ?? state[key + "/IPv6"]?["InterfaceName"] as? String
+            guard let name, let interface = IPv6Address("fe80::%\(name)")?.interface else { continue }  // not active
+            let servers = saved[id].flatMap { $0.isEmpty ? nil : $0 } ?? state[key + "/DNS"]?["ServerAddresses"] as? [String] ?? []
+            for text in servers {
+                guard let host = Self.resolverHost(text, interface: interface), seen.insert(host).inserted,
+                      self.port != listenPort || !Self.isLoopback(host) else { continue }
+                targets.append(.hostPort(host: host, port: port))
+            }
+        }
+        return SelectedRoute(upstreams: targets.map { NetworkUpstream(endpoint: $0, timeout: timeout / Double(targets.count)) })
+    }
+
     private struct SelectedRoute: DNSUpstream {
         let upstreams: [NetworkUpstream]
 
@@ -156,8 +185,10 @@ struct DNSRoutes {
                                   port: serverPort(configuration), scoped: true)
                 for (index, domain) in domains.enumerated() {
                     guard let suffix = Self.suffix(domain) else { return nil }
-                    if suffix.isEmpty && multicast { continue }
-                    if seen.insert(suffix).inserted && (suffix.isEmpty || name == suffix || name.hasSuffix("." + suffix)) {
+                    // A catch-all scope makes a VPN the Mac's default resolver. The lookups that
+                    // reach Clearpath then come from that VPN, so they never go back to it (#73).
+                    if suffix.isEmpty { continue }
+                    if seen.insert(suffix).inserted && (name == suffix || name.hasSuffix("." + suffix)) {
                         let order = index < orders.count ? orders[index] : Int.max
                         matches.append((suffix, order, route))
                     }
@@ -175,12 +206,8 @@ struct DNSRoutes {
         }
 
         guard !multicast else { return nil }
-        let global = state["State:/Network/Global/DNS"] ?? [:]
-        let globalServers = global["ServerAddresses"] as? [String] ?? []
-        if let first = globalServers.first, !NetworkDNS.isLoopback(NWEndpoint.Host(first)) {
-            return Route(servers: globalServers, interface: nil, port: serverPort(global))
-        }
-
+        // Ordinary names go to the network's own resolver: the primary service's saved manual
+        // DNS or its negotiated servers. The global resolver may be a VPN's (#73).
         for family in ["IPv4", "IPv6"] {
             guard let primary = state["State:/Network/Global/" + family],
                   let id = primary["PrimaryService"] as? String else { continue }
@@ -191,6 +218,11 @@ struct DNSRoutes {
                 return Route(servers: servers, interface: serviceInterface(key) ?? primary["PrimaryInterface"] as? String,
                              port: serverPort(config))
             }
+        }
+        let global = state["State:/Network/Global/DNS"] ?? [:]
+        let globalServers = global["ServerAddresses"] as? [String] ?? []
+        if let first = globalServers.first, !NetworkDNS.isLoopback(NWEndpoint.Host(first)) {
+            return Route(servers: globalServers, interface: nil, port: serverPort(global))
         }
         return nil
     }

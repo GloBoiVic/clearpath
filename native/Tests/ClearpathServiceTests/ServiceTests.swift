@@ -42,6 +42,7 @@ final class FakeMac: SystemControl {
     var communityListJobStarts = true
     var filterStarts = true
     var filterResolvesLookups = true
+    var networkResolvesLookups = true
     var portFree = true
     var ignoreSetFor: String?
     var onPause: () -> Void = {}
@@ -133,6 +134,7 @@ final class FakeMac: SystemControl {
     func networkLocation() throws -> NetworkLocation { NetworkLocation(id: locationID, serviceIDs: identifiers) }
     func filterAnswers(port: UInt16) -> Bool { loaded && filterStarts }
     func filterResolves(port: UInt16) -> Bool { filterAnswers(port: port) && filterResolvesLookups }
+    func networkResolves(_ record: RecoveryRecord) -> Bool { networkResolvesLookups }
     func pause(seconds: Double) { onPause() }
 
     var dns: [String: [String]] { Dictionary(uniqueKeysWithValues: services.map { ($0.name, $0.servers) }) }
@@ -551,6 +553,26 @@ final class ServiceTests: XCTestCase {
         XCTAssertEqual(status.defaultResolverUsesFilter, false)
         mac.resolverState = "DNS configuration\n\nresolver #1\n  nameserver[0] : 127.0.0.1\n\nresolver #2\n  nameserver[0] : 192.0.2.53\n"
         XCTAssertEqual(try manager.status().defaultResolverUsesFilter, true)
+    }
+
+    func test_status_flags_lookups_that_fail_only_through_the_filter_while_a_vpn_is_the_default_resolver() throws {
+        try install()
+        mac.resolverState = "DNS configuration\n\nresolver #1\n  nameserver[0] : 100.100.100.100\n\nresolver #2\n  nameserver[0] : 127.0.0.1\n"
+        XCTAssertNil(try manager.status().lookupsFailThroughFilter)
+
+        // A DNS loop (#73): the filter answers the probe but resolves nothing; the network's resolver works.
+        mac.filterResolvesLookups = false
+        let looping = try manager.status()
+        XCTAssertTrue(looping.answering)
+        XCTAssertEqual(looping.lookupsFailThroughFilter, true)
+
+        // The network itself is down: going around Clearpath would not help.
+        mac.networkResolvesLookups = false
+        XCTAssertEqual(try manager.status().lookupsFailThroughFilter, false)
+
+        // With the filter as the default resolver no lookup is spent.
+        mac.resolverState = "DNS configuration\n\nresolver #1\n  nameserver[0] : 127.0.0.1\n"
+        XCTAssertNil(try manager.status().lookupsFailThroughFilter)
     }
 
     func test_install_copies_the_control_tool_and_reports_when_it_is_available() throws {

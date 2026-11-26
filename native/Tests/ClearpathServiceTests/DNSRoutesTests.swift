@@ -65,13 +65,37 @@ final class DNSRoutesTests: XCTestCase {
         XCTAssertEqual(ambiguous.route(for: "public.example")?.servers, ["192.0.2.53"])
     }
 
-    func test_vpn_catchall_takes_precedence_over_the_default_resolver() {
+    /// Tailscale's DNS (#73): the VPN becomes the Mac's default resolver and forwards ordinary
+    /// names to the interface DNS, which is Clearpath. Sending them back to the VPN loops.
+    func test_a_vpn_default_resolver_never_receives_ordinary_names_from_the_filter() {
+        var state: [String: [String: Any]] = [
+            globalDNS: ["ServerAddresses": ["100.100.100.100"]],
+            globalIPv4: ["PrimaryService": "ethernet", "PrimaryInterface": "en0"],
+            ethernet: ["ServerAddresses": ["192.0.2.1"]],
+            "Setup:/Network/Service/ethernet/DNS": ["ServerAddresses": ["127.0.0.1"]],
+            tunnel: ["SupplementalMatchDomains": ["", "tailnet.example"], "ServerAddresses": ["100.100.100.100"],
+                     "InterfaceName": "utun4"],
+        ]
+        let automatic = DNSRoutes(state: state, saved: ["ethernet": []], port: 53)
+        XCTAssertEqual(automatic.route(for: "public.example"), .init(servers: ["192.0.2.1"], interface: "en0", port: 53))
+        XCTAssertEqual(automatic.route(for: "host.tailnet.example"),
+                       .init(servers: ["100.100.100.100"], interface: "utun4", port: 53, scoped: true))
+        XCTAssertEqual(DNSRoutes(state: state, saved: ["ethernet": ["192.0.2.80"]], port: 53).route(for: "public.example")?.servers,
+                       ["192.0.2.80"])
+
+        // The same VPN published only as the global resolver, without a catch-all scope.
+        state[tunnel] = ["SupplementalMatchDomains": ["tailnet.example"], "ServerAddresses": ["100.100.100.100"]]
+        XCTAssertEqual(DNSRoutes(state: state, saved: ["ethernet": []], port: 53).route(for: "public.example")?.servers,
+                       ["192.0.2.1"])
+    }
+
+    func test_a_vpn_catchall_still_leaves_specific_vpn_scopes_in_place() {
         let routes = DNSRoutes(state: [
             globalDNS: ["ServerAddresses": ["192.0.2.53"]],
             tunnel: ["SupplementalMatchDomains": [""], "ServerAddresses": ["192.0.2.54"]],
             otherTunnel: ["SupplementalMatchDomains": ["dev.corp.example"], "ServerAddresses": ["192.0.2.55"]],
         ], saved: [:], port: 53)
-        XCTAssertEqual(routes.route(for: "public.example")?.servers, ["192.0.2.54"])
+        XCTAssertEqual(routes.route(for: "public.example")?.servers, ["192.0.2.53"])
         XCTAssertEqual(routes.route(for: "host.dev.corp.example")?.servers, ["192.0.2.55"])
     }
 
