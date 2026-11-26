@@ -199,9 +199,9 @@ Not shown here: vendor VPN clients, Wi-Fi, real Mac sleep, iCloud Private Relay 
 Before installing, save the current DNS state with read-only commands:
 
 ```sh
-networksetup -listallnetworkservices
-networksetup -getdnsservers Wi-Fi        # repeat for each service listed
-scutil --dns > ~/Desktop/clearpath-dns-before.txt
+networksetup -listallnetworkservices > ~/Desktop/clearpath-dns-before.txt
+networksetup -getdnsservers "Wi-Fi" >> ~/Desktop/clearpath-dns-before.txt   # repeat for each service listed
+scutil --dns >> ~/Desktop/clearpath-dns-before.txt
 ```
 
 If something goes wrong, use the first step that works:
@@ -217,7 +217,7 @@ If something goes wrong, use the first step that works:
 
    `uninstall` restores DNS from `recovery.json` and waits until macOS stops using `127.0.0.1`. Only then does it stop the three jobs and remove Clearpath's own files. After it, drag `/Applications/Clearpath.app` to the Trash. Then remove **Clearpath Browser Policies** in Device Management and Clearpath from Login Items, and restart Chrome and Firefox. They use the same tool and DNS-restore path as the app. #9 proved `clearpath-service uninstall` in a VM ([Filter service in a disposable VM](#filter-service-in-a-disposable-vm--2026-11-21)); this run didn't call them by hand.
 
-   Last resort, only if that tool is missing or refuses: for each service that shows `127.0.0.1` in `networksetup -getdnsservers "<service>"`, set it back to what `~/Desktop/clearpath-dns-before.txt` and the before commands recorded. Use `sudo networksetup -setdnsservers "Wi-Fi" Empty` if that service was automatic, or `sudo networksetup -setdnsservers "Wi-Fi" <saved servers>` if it had its own. Then ask for help before deleting anything.
+   Last resort, only if that tool is missing or refuses: for each service that shows `127.0.0.1` in `networksetup -getdnsservers "<service>"`, set it back to what `~/Desktop/clearpath-dns-before.txt` recorded for it. Use `sudo networksetup -setdnsservers "Wi-Fi" Empty` if that service was automatic, or `sudo networksetup -setdnsservers "Wi-Fi" <saved servers>` if it had its own. Then ask for help before deleting anything.
 4. **Check:** compare `scutil --dns` with `~/Desktop/clearpath-dns-before.txt`, and confirm that ordinary sites load.
 
 Each of these steps on Victor's Mac is a Hard stop: he runs it himself after saying yes in chat.
