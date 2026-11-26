@@ -49,7 +49,7 @@ Every Hard stop in `AGENTS.md` still applies. Each run needs Victor's yes in cha
 | `vm-windowid APP [TITLE]` | guest | Print `ID X Y W H` for an app's front window, for `screencapture -l`. |
 | `vm-typepw` | guest | Type one line read from stdin. The text is never an argument and is never printed. |
 | `vm-ocr IMAGE` | host | Print each text line in a screenshot with its centre point. `--find TEXT` keeps matching lines. |
-| `vm-dns-fixture` | guest | A synthetic resolver: `answer IP PORT` answers every A question with `192.0.2.42`; `vpn IP PORT SUFFIX` stands in for a VPN resolver such as Tailscale MagicDNS and forwards other names to the primary service's configured DNS. Never forwards to a public server. |
+| `vm-dns-fixture` | guest | A synthetic resolver: `answer IP PORT` answers every A question with `192.0.2.42`; `vpn IP PORT SUFFIX` stands in for a VPN resolver such as Tailscale MagicDNS and forwards other names to TARGET or, without one, to the primary service's configured DNS. Use it without a TARGET only in the guest, where that DNS is a synthetic fixture. |
 
 `vm-click`, `vm-key` and `vm-typepw` accept `--dry-run`, which prints what they would do and posts nothing. `tests/test_vm_helpers.py` checks the helpers on the host with `--dry-run`, bad input and a synthetic image. It never posts an event. The helpers were first run in a guest on 2026-11-22 ([RESULTS.md](RESULTS.md#vm-driving-helpers-in-a-disposable-vm--2026-11-22)). #53 also ran `vm-click --double` (opening a file in Finder) and `vm-typepw` into the macOS administrator prompt.
 
