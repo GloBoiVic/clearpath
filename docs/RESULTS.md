@@ -225,7 +225,7 @@ Each of these steps on Victor's Mac is a Hard stop: he runs it himself after say
 
 # Safari private windows in a disposable VM — 2026-11-26
 
-Issue #61 looked for a way to stop Safari private windows bypassing Clearpath (#53). VM: `clearpath-61-safari`, a Tart 2.41.1 clone of the pinned image (macOS 26.6.2, 25G83, Safari 26.6.2), no Apple Account. Clearpath was built from `main` at 255cec2 and installed from the setup window, with `example.org` blocked from the menu bar. Every VM step had Victor's approval. Victor's Mac was not changed. Only the #53 domains were visited, and no adult domain.
+Issue #61 looked for a way to stop Safari private windows bypassing Clearpath (#53). VM: `clearpath-61-safari`, a Tart 2.41.1 clone of the pinned image (macOS 26.6.2, 25G83, Safari 26.6.2), no Apple Account. Clearpath was built from `main` at 255cec2 and installed from the setup window, with `example.org` blocked from the menu bar. Every VM step had Victor's approval. Victor's Mac was not changed. Only the #53 domains were visited. The one adult domain, `pornhub.com` from the adult list, was visited once, in a private window with the final profile installed, after the fix already blocked `example.org`.
 
 **What a profile can do without an MDM server:**
 
@@ -243,6 +243,7 @@ Victor chose to lock only the private key (#61). With only `EnableEnhancedPrivac
 | Safari settings | Locked | Settings → Advanced shows "Use advanced tracking and fingerprinting protection" unchecked and dimmed. Neither the checkbox nor the menu responds, so the user can't choose "in all browsing". Settings → Privacy: Prevent cross-site tracking and Hide IP address from trackers stay on and can be changed. |
 | Normal window with the user's own regular key on | Pass | The regular key was set to true as the guest user (`defaults write`), and Settings then read "in all browsing", still dimmed. `example.org` and a never-visited `www.example.org` failed, and SafeSearch was forced on all three engines. |
 | Control: same user setting, no profile | **Fail** | A normal window loaded `example.org`. On a Mac without the profile, protection set to "in all browsing" bypasses Clearpath in normal windows too. |
+| Adult-list domain, final build | Pass | In a private window, `pornhub.com` showed "Safari Can't Find the Server". The filter answered NXDOMAIN. The profile was then removed. |
 | Final build (8ac02db) | Pass | Device Management showed the new description and installed `io.clearpath.browser-policy.v1` with three payloads. `/Library/Managed Preferences/admin/com.apple.Safari.plist` held only `EnableEnhancedPrivacyInPrivateBrowsing` false. Private and normal windows passed the checks above. The profile was then removed. |
 
 One normal-window load of `http://example.org/` succeeded with the final build because Safari served it from its HTTP cache: that page had been loaded in a normal window during the control run. The same URL with a query string, and `www.example.org`, failed, and the system resolver answered NXDOMAIN. Cached pages outliving a new block is the known DNS limit in [ARCHITECTURE.md](ARCHITECTURE.md#privacy-lists-and-operational-limits). Private windows keep no disk cache.
