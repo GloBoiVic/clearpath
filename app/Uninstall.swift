@@ -3,7 +3,8 @@ import ServiceManagement
 import SwiftUI
 
 struct UninstallView: View {
-    @State private var confirmation = UninstallConfirmation()
+    @State private var confirmation = UninstallConfirmation(
+        sentence: PartnerWording.uninstallSentence(solo: PartnerWording.currentSolo))
     @State private var running = false
     @State private var manualProfile = false
     @State private var feedback: String?
@@ -14,7 +15,7 @@ struct UninstallView: View {
             Section("Uninstall now") {
                 Text("Clearpath will restore your previous DNS settings and remove the filter, browser profile, and app. If a partner service is configured, Clearpath saves an uninstall event for your partner.")
                 Text("Type this sentence to start the 60-second countdown.")
-                Text(UninstallConfirmation.sentence).fontWeight(.semibold)
+                Text(confirmation.sentence).fontWeight(.semibold)
                 TextField("Confirmation sentence", text: Binding(
                     get: { confirmation.text },
                     set: { confirmation.update($0, at: clock.now) }

@@ -30,7 +30,7 @@ struct Panel: View {
             }
             if health.state.offersRestore {
                 if health.restoreAvailable {
-                    Text("Administrator approval is required. Clearpath records a restore event for partner alerts.")
+                    Text(PartnerWording.restoreNote(solo: PartnerWording.currentSolo))
                         .foregroundStyle(.secondary)
                 } else {
                     Text("Restore internet is unavailable for this service installation. See Set up protection.")

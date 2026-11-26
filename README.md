@@ -10,7 +10,7 @@ Open the ad-hoc signed `Clearpath.app` from the build and click **Install Clearp
 
 Clearpath reopens from Applications and registers to open at login. Setup shows the login item status and offers a link to Login Items if macOS requires approval. Once protection is on, continue with the browser instructions and **Finish setup**. For the solo trial, acknowledge the solo warning to finish. Reopening an installed copy preserves its DNS settings, rules, and login item.
 
-To remove the installed app, open the shield menu and choose **Leave Clearpath**. Type **I understand my partner will be notified**, wait 60 seconds and approve the macOS administrator prompt. Clearpath restores the recorded DNS before stopping the filter and removes its browser profile, login item, service files and app. If macOS requires manual profile removal, follow the instructions in the window and choose **Check profile and continue**. You can run uninstall offline.
+To remove the installed app, open the shield menu and choose **Leave Clearpath**. Type the sentence the window shows (**I understand I am removing Clearpath** with no partner service configured, **I understand my partner will be notified** with one), wait 60 seconds and approve the macOS administrator prompt. Clearpath restores the recorded DNS before stopping the filter and removes its browser profile, login item, service files and app. If macOS requires manual profile removal, follow the instructions in the window and choose **Check profile and continue**. You can run uninstall offline.
 
 ## Try partner invitations locally
 

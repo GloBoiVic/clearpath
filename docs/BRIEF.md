@@ -47,7 +47,7 @@ V1 runs on Victor's Mac only. He keeps his admin account. The diagram is `docs/a
 
 **Leaving**
 - Uninstall with approval: request it, then a partner approves or 7 days pass.
-- Uninstall right now: open **Leave Clearpath** from the shield menu, type **I understand my partner will be notified**, wait 60 seconds, and approve the macOS administrator prompt. This works offline. With a configured pairing service, Clearpath saves an uninstall-without-approval event for delivery in #22. An accepted partner who never receives the event still gets the missed-check-in alert after 24 hours.
+- Uninstall right now: open **Leave Clearpath** from the shield menu, type the sentence the window shows (**I understand I am removing Clearpath** with no partner service configured, **I understand my partner will be notified** with one), wait 60 seconds, and approve the macOS administrator prompt. This works offline. With a configured pairing service, Clearpath saves an uninstall-without-approval event for delivery in #22. An accepted partner who never receives the event still gets the missed-check-in alert after 24 hours.
 - Both uninstall routes use the same cleanup. Clearpath verifies the previous DNS settings before stopping the filter. It removes its background services, support files, login item, browser profile and app. If macOS requires manual profile removal, Clearpath guides the user through Device Management and verifies removal on retry.
 
 **Failure.** If the filter crashes, internet lookups stop until it restarts on its own, within seconds. If it stays down, the menu bar shows the problem and a "Restore internet" button; using it alerts the partner. A crash never silently leaves the user unprotected, and never leaves them stuck offline.
