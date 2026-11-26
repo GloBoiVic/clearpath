@@ -1,6 +1,6 @@
 import Foundation
 
-/// Managed browser DNS settings and Chrome's Google SafeSearch policy.
+/// Managed browser DNS settings, Chrome's Google SafeSearch policy and Safari's private-window protection.
 public enum BrowserProfile {
     static let identifier = "io.clearpath.browser-policy.v1"
     static let uuid = "B68A3543-1786-5EE8-9951-19B494DC4CB2"
@@ -27,6 +27,17 @@ public enum BrowserProfile {
                     "DNSOverHTTPS__Enabled": false,
                     "DNSOverHTTPS__Locked": true
                 ]
+            ),
+            preferencesPayload(
+                domain: "com.apple.Safari", suffix: "safari",
+                uuid: "2B41B8F6-B92F-5D27-A4A9-808E8947797D",
+                name: "Clearpath Safari settings",
+                settings: [
+                    // Safari's "advanced tracking and fingerprinting protection" key, undocumented by Apple.
+                    // While it is on, private windows bypass the system DNS path (#61). Safari then dims
+                    // the whole setting, so it reads as off in every window.
+                    "EnableEnhancedPrivacyInPrivateBrowsing": false
+                ]
             )
         ]
         let profile: [String: Any] = [
@@ -36,7 +47,7 @@ public enum BrowserProfile {
             "PayloadVersion": 1,
             "PayloadDisplayName": name,
             "PayloadOrganization": "Clearpath",
-            "PayloadDescription": "Turns off Chrome and Firefox Secure DNS and forces Google SafeSearch in Chrome.",
+            "PayloadDescription": "Turns off Chrome and Firefox Secure DNS, forces Google SafeSearch in Chrome, and turns off Safari's advanced tracking and fingerprinting protection so Clearpath also filters Safari private windows.",
             "PayloadScope": "System",
             "PayloadRemovalDisallowed": false,
             "PayloadContent": preferences
