@@ -70,10 +70,12 @@ extension ServiceManager {
 public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
     private let manager: ServiceManager
     private let consoleUser: () -> uid_t?
+    private let now: () -> Date
 
-    init(manager: ServiceManager, consoleUser: @escaping () -> uid_t?) {
+    init(manager: ServiceManager, consoleUser: @escaping () -> uid_t?, now: @escaping () -> Date = Date.init) {
         self.manager = manager
         self.consoleUser = consoleUser
+        self.now = now
     }
 
     public static func serve(manager: ServiceManager) throws {
@@ -89,9 +91,7 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
         Task { await PairingClient.sendCheckIns(client: manager.pairingClient) }
         Task {
             while !Task.isCancelled {
-                if let client = try? manager.pairingClient() {
-                    await manager.reconcileSiteRemovals(client: client)
-                }
+                await manager.reconcileSiteRemovals(now: Date())
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
             }
         }
@@ -102,17 +102,19 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
         let uid = connection.effectiveUserIdentifier
         guard consoleUser() == uid else { return false }
         connection.exportedInterface = NSXPCInterface(with: SiteBlockRequest.self)
-        connection.exportedObject = Writer(manager: manager) { [consoleUser] in consoleUser() == uid }
+        connection.exportedObject = Writer(manager: manager, now: now) { [consoleUser] in consoleUser() == uid }
         connection.resume()
         return true
     }
 
     private final class Writer: NSObject, SiteBlockRequest {
         let manager: ServiceManager
+        let now: () -> Date
         let authorized: () -> Bool
 
-        init(manager: ServiceManager, authorized: @escaping () -> Bool) {
+        init(manager: ServiceManager, now: @escaping () -> Date, authorized: @escaping () -> Bool) {
             self.manager = manager
+            self.now = now
             self.authorized = authorized
         }
 
@@ -133,8 +135,12 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
                 return
             }
             do {
-                _ = try manager.pairingClient()
-                try manager.requestSiteRemoval(domain, rule: rule)
+                let deadline: Date?
+                switch try manager.removalAuthority() {
+                case .partner: deadline = nil
+                case .solo: deadline = now().addingTimeInterval(ServiceManager.soloRemovalDelay)
+                }
+                try manager.requestSiteRemoval(domain, rule: rule, deadline: deadline)
                 reply("", nil)
             } catch ServiceError.refused(let message) {
                 reply(nil, message)
@@ -146,8 +152,8 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
         func listRemovals(reply: @escaping (String?, String?) -> Void) {
             guard authorized() else { reply(nil, "Sign in to this Mac to see requests."); return }
             do {
-                _ = try manager.pairingClient()
-                let data = try JSONEncoder().encode(manager.readSiteRemovals())
+                _ = try manager.removalAuthority()
+                let data = try ServiceManager.removalEncoder.encode(manager.readSiteRemovals())
                 reply(String(decoding: data, as: UTF8.self), nil)
             } catch ServiceError.refused(let message) {
                 reply(nil, message)
@@ -171,13 +177,19 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
         guard domain.utf8.count <= 1024, RemovalRule(rawValue: rule) != nil else {
             throw ServiceError.refused("Select a site block to remove.")
         }
-        let connection = NSXPCConnection(machServiceName: ServicePaths.siteBlockLabel, options: .privileged)
+        try requestRemoval(domain, rule: rule, over: NSXPCConnection(machServiceName: ServicePaths.siteBlockLabel, options: .privileged))
+    }
+
+    static func requestRemoval(_ domain: String, rule: String, over connection: NSXPCConnection) throws {
         _ = try call(over: connection) { $0.requestRemoval(domain, rule: rule, reply: $1) }
     }
 
     public static func listRemovals() throws -> String {
-        let connection = NSXPCConnection(machServiceName: ServicePaths.siteBlockLabel, options: .privileged)
-        return try call(over: connection) { $0.listRemovals(reply: $1) }
+        try listRemovals(over: NSXPCConnection(machServiceName: ServicePaths.siteBlockLabel, options: .privileged))
+    }
+
+    static func listRemovals(over connection: NSXPCConnection) throws -> String {
+        try call(over: connection) { $0.listRemovals(reply: $1) }
     }
 
     private static func call(over connection: NSXPCConnection,

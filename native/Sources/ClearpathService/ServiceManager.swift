@@ -51,6 +51,8 @@ public struct RecoveryRecord: Codable, Equatable, Sendable {
     public let upstreamPort: UInt16
     /// `scutil --dns` before install, kept as evidence of the resolvers in use.
     public let resolverState: String
+    /// Whether install wrote a pairing configuration. Records from before this field are nil.
+    public var pairingService: Bool? = nil
 }
 
 public struct ServiceStatus: Codable, Equatable, Sendable {
@@ -170,7 +172,8 @@ public final class ServiceManager {
         }
 
         let record = RecoveryRecord(locationID: location.id, createdAt: ISO8601DateFormatter().string(from: Date()), services: services,
-                                    upstream: chosen, upstreamPort: upstreamPort, resolverState: resolver.output)
+                                    upstream: chosen, upstreamPort: upstreamPort, resolverState: resolver.output,
+                                    pairingService: configData != nil)
         try makeDirectory(paths.supportDirectory)
         try withServiceLock {
             if initialList != nil, try status().setupInstallAvailable != true {
@@ -201,7 +204,7 @@ public final class ServiceManager {
                     throw ServiceError.failed("The filter did not answer on \(Self.listenAddress):\(Self.listenPort) within \(Int(Self.readyTimeout)) seconds.")
                 }
                 if controlData != nil {
-                    try writeFile(try siteBlockPlist(reconcileRemovals: configData != nil), to: paths.siteBlockPlist, mode: 0o644)
+                    try writeFile(try siteBlockPlist(), to: paths.siteBlockPlist, mode: 0o644)
                     try check(system.run(.launchctl, ["bootstrap", "system", paths.siteBlockPlist.path]), "launchctl bootstrap site-block service")
                 }
                 log("Filter answering on \(Self.listenAddress):\(Self.listenPort).")
@@ -463,13 +466,14 @@ public final class ServiceManager {
         return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
     }
 
-    private func siteBlockPlist(reconcileRemovals: Bool) throws -> Data {
+    /// Always running, so a partner decision or a solo deadline applies without the app open.
+    private func siteBlockPlist() throws -> Data {
         let plist: [String: Any] = [
             "Label": ServicePaths.siteBlockLabel,
             "ProgramArguments": [paths.controlTool.path, "serve-site-blocks"],
             "MachServices": [ServicePaths.siteBlockLabel: true],
-            "RunAtLoad": reconcileRemovals,
-            "KeepAlive": reconcileRemovals,
+            "RunAtLoad": true,
+            "KeepAlive": true,
         ]
         return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
     }
