@@ -154,3 +154,67 @@ Issue #38 ran the `scripts/vm` helpers in `clearpath-38-smoke`, a disposable Tar
 **Surprise.** The first `screencapture` through the guest agent raised *"tart-guest-agent" is requesting to bypass the system private window picker and directly access your screen and audio*. While it was up, `vm-click`, `vm-key` and `vm-typepw` exited 0 but changed nothing, `lsappinfo` named `UserNotificationCenter` as the front app, and Escape did not dismiss it. After **Allow**, the same helpers worked. `docs/TESTING.md` now says this.
 
 Not run: `vm-click --double`, and `vm-typepw` into a password field (it needs an administrator prompt).
+
+# Trial-build check in a disposable VM — 2026-11-26
+
+Issue #53 ran the trial build before it goes on Victor's Mac (#54). Environment:
+
+- **VM:** `clearpath-53-trial`, a Tart 2.41.1 clone of the pinned image above (macOS 26.6.2, 25G83, arm64), cloned before first boot, default Tart NAT and the read-only share.
+- **Build:** `./build.sh --build-only` from `main` at 48a79b6.
+- **Browsers:** Safari 26.6.2, Chrome 158.0.8127.89 and Firefox 161.0, downloaded from Google and Mozilla in the guest.
+- **Community list:** 2026.1125.2346.19, downloaded by the install.
+
+Every guest administrator prompt, `sudo`, DNS change, profile, public lookup and lifecycle step had Victor's approval in chat. Victor's Mac was not changed.
+
+| Check | Result | Observed |
+|---|---|---|
+| Pre-install baseline | — | Ethernet on automatic DNS (resolver #1 `fe80::…%en0`, `192.168.64.1`). No Clearpath app, jobs, support folder or Managed Preferences. Open at Login empty. |
+| Install from the setup window | Pass | One administrator prompt. The setup window then showed **Protection is on. The community blocklist is active.** and **Open at login: On**. The three jobs were loaded, the filter ran as `nobody` on `127.0.0.1:53`, and Ethernet DNS was `127.0.0.1`. |
+| Solo setup | Pass | Partners → acknowledge → **Finish setup** showed "Setup complete without a partner". |
+| Open at login | Pass | System Settings listed Clearpath under Open at Login. The app started on its own after both reboots. |
+| Browser profile | Pass | Device Management installed `io.clearpath.browser-policy.v1`. `chrome://policy`: `DnsOverHttpsMode` off and `ForceGoogleSafeSearch` true, Platform, Machine, Mandatory, OK. `about:policies`: `DNSOverHTTPS` Enabled false, Locked true, no errors. Firefox `about:networking`: DoH mode Off. |
+| Chrome, normal and Incognito | Pass | `pornhub.com`: `DNS_PROBE_FINISHED_NXDOMAIN`. Google: "Filtering on", can't change, URL rewritten to `safe=active`. Bing: "requires a strict Bing SafeSearch setting". DuckDuckGo: no SafeSearch control. `example.com`, `wikipedia.org` and `apple.com` loaded. |
+| Firefox, normal and private | Pass | Same results. Firefox 161 words a DNS failure as "Could not connect to the server" (it says the same for the locally blocked `example.org`). Its DNS cache held `www.pornhub.com` with no address. |
+| Safari, normal window | Pass | `pornhub.com`: "Safari Can't Find the Server". SafeSearch was forced on all three engines, and ordinary sites loaded. |
+| **Safari, private window** | **Fail (#61)** | Clearpath had no effect: `pornhub.com` loaded its age-gate page, the locally blocked `example.org` loaded, Google SafeSearch showed off, Bing offered Moderate and DuckDuckGo showed "Safe search: off". With Safari's "Use advanced tracking and fingerprinting protection" (on in Private Browsing by default) turned off, a private window failed `example.org` like a normal window. |
+| SafeSearch DNS | Pass, one gap | `www.google.com` and `google.com` → `forcesafesearch.google.com`. `www.bing.com` and `bing.com` → `strict.bing.com`. `duckduckgo.com` → `safe.duckduckgo.com`. **`www.duckduckgo.com` → SERVFAIL (#60)**: it is a CNAME of `duckduckgo.com` and the default policy doesn't map it, so the filter fails closed. |
+| Add a block from the menu bar | Pass | **Block a site** → `example.org`. About a second later `example.org` and `www.example.org` went from NOERROR to NXDOMAIN. The block survived a power loss and a reboot. |
+| **Removal request (solo seven-day rule)** | **Fail (#59)** | The panel showed **Pending requests: Unavailable**. **Request removal** created nothing, and `clearpath-service request-site-removal` said "Site removal requests need a configured pairing service." (exit 2). The block stayed. |
+| Scoped resolver (VPN stand-in) | Pass | A supplemental `vpn.example` resolver pointed at a guest fixture on `[::1]:5354`. Names resolved through it via the system resolver and through the filter (UDP, TCP, AAAA), and the fixture saw no other names. With the fixture stopped, the filter answered SERVFAIL. The scope was removed afterwards and `scutil --dns` matched the post-install state. |
+| Local networking | Pass | A page on `localhost`, `127.0.0.1` and `[::1]:8000` loaded in all three browsers. `dns-sd` registered, browsed and resolved a `.local` service, and the page loaded by the `.local` host name. |
+| Developer smoke | Pass | `git ls-remote` over HTTPS, `pip download six` and `npm view` / `npm pack is-number` worked through the filter. Docker, databases, SSH and hot reload weren't available or weren't run. |
+| Network change | Pass | Ethernet off: lookups SERVFAIL. Ethernet on: answered again within about 2 s from the same filter PID, still blocking. |
+| Filter killed | Pass | `kill -9`: a new filter (as `nobody`) answered within about 0.2 s, with blocking and SafeSearch intact. The panel stayed **Protection is on**. |
+| Sleep and wake | Not verifiable | The guest refused `pmset sleepnow` (`0xe00002e2`), as in #10. `tart suspend` worked, but the saved state couldn't be restored ("invalid argument") because the clone wasn't started with `--suspendable`. |
+| Power loss | Pass | The unrestorable saved state was discarded, so the guest cold-booted. The filter started 6 s after boot and the app 22 s after, with DNS still `127.0.0.1` and blocking, the custom block and SafeSearch working. |
+| Reboot | Pass | After `sudo reboot`: filter 6 s after boot, app 21 s after, same checks passed. |
+| Restore internet | Pass | Replaced `policy.json` with invalid JSON and killed the filter. launchd kept retrying (exit 1) and the panel showed **Protection is offline** with **Restore internet**. One administrator prompt then restored DNS. The panel showed **Previous DNS settings restored / DNS filtering is off**, and both the network-service DNS and `scutil --dns` matched the pre-install baseline exactly. A repeated restore kept the same event ID. |
+| Uninstall now | Pass | **Leave Clearpath** → typed sentence → 60 s countdown → **Uninstall now** → one administrator prompt. The window showed "Clearpath was uninstalled. Your previous DNS settings were restored." DNS matched the baseline. No app, jobs, launchd entry, support folder, uninstall event, Clearpath profile or login item remained. Chrome showed "No policies set" and Firefox "Enterprise Policies service is inactive" after a restart. After another reboot it was the same, and Clearpath didn't start. The only difference from the baseline is an empty, root-owned `/Library/Managed Preferences` folder, which macOS created when the profile was installed. |
+| Wording | Minor (#62) | In solo mode, the uninstall sentence ("I understand my partner will be notified") and the Restore internet note ("records a restore event for partner alerts") mention a partner who doesn't exist. |
+
+Not shown here: vendor VPN clients, Wi-Fi, real Mac sleep, iCloud Private Relay (no Apple Account), signed-in search accounts, and an uninstall from a healthy filter (this run uninstalled after Restore internet; #23 covered the healthy case).
+
+## Recovery on Victor's Mac
+
+Before installing, save the current DNS state with read-only commands:
+
+```sh
+networksetup -listallnetworkservices
+networksetup -getdnsservers Wi-Fi        # repeat for each service listed
+scutil --dns > ~/Desktop/clearpath-dns-before.txt
+```
+
+If something goes wrong, use the first step that works:
+
+1. **Protection is offline and the internet is down:** shield → **Restore internet**, then approve the administrator prompt. DNS goes back to the saved settings, and Clearpath stays installed but stops filtering. (Proven above.)
+2. **To remove Clearpath:** shield → **Leave Clearpath**. Type the sentence, wait 60 seconds, choose **Uninstall now** and approve the prompt. If it asks, remove **Clearpath Browser Policies** in System Settings → General → Device Management, then choose **Check profile and continue**. Restart Chrome and Firefox. (Proven above and in #23.)
+3. **If the app itself won't help**, in Terminal:
+   - restore each service's DNS from `/Library/Application Support/Clearpath/recovery.json` with `sudo networksetup -setdnsservers "<service>" <saved servers>`, or `Empty` if it was automatic;
+   - `sudo launchctl bootout system/io.clearpath.filter`, then the same for `io.clearpath.community-list` and `io.clearpath.site-blocks`;
+   - delete their plists from `/Library/LaunchDaemons`, then `/Library/Application Support/Clearpath` and `/Applications/Clearpath.app`;
+   - remove **Clearpath Browser Policies** in Device Management and Clearpath from Login Items.
+
+   This step is documented in [TESTING.md](TESTING.md#filter-service-install-and-rollback-in-the-vm) but wasn't run in this VM.
+4. **Check:** compare `scutil --dns` with `~/Desktop/clearpath-dns-before.txt`, and confirm that ordinary sites load.
+
+Each of these steps on Victor's Mac is a Hard stop: he runs it himself after saying yes in chat.
