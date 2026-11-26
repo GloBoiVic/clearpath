@@ -52,6 +52,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSWindowDelegate
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         blockedLookupNotifications.start()
+        Task { await SiteBlockModel.recordPartnerPairing() }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
             button.target = self

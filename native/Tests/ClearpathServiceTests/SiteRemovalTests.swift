@@ -56,6 +56,188 @@ final class SiteRemovalTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: paths.siteBlockPlist.path))
     }
 
+    /// The listener holds its delegate weakly, so the test keeps it.
+    private var siteBlockControl: SiteBlockControl?
+
+    private func serveSiteBlocks(now: @escaping () -> Date) -> NSXPCListener {
+        let control = SiteBlockControl(manager: manager, consoleUser: { geteuid() }, now: now)
+        siteBlockControl = control
+        let listener = NSXPCListener.anonymous()
+        listener.delegate = control
+        listener.resume()
+        return listener
+    }
+
+    private func listedRemovals(_ listener: NSXPCListener) throws -> [SiteRemoval] {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let text = try SiteBlockControl.listRemovals(over: NSXPCConnection(listenerEndpoint: listener.endpoint))
+        return try decoder.decode([SiteRemoval].self, from: Data(text.utf8))
+    }
+
+    func test_solo_install_without_pairing_configuration_removes_a_block_after_seven_days() async throws {
+        let upstream = try CommunityLoopback(tcp: false) { packet in
+            guard let query = try? DNSMessage(Array(packet)) else { return Data() }
+            return Data(query.response(answers: [DNSRecord(name: query.name, type: 1, data: [192, 0, 2, 42])]))
+        }
+        defer { upstream.stop() }
+        try install(upstreamPort: upstream.port.rawValue)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.partnerConfig.path))
+        let job = try XCTUnwrap(PropertyListSerialization.propertyList(
+            from: Data(contentsOf: paths.siteBlockPlist), options: [], format: nil) as? [String: Any])
+        XCTAssertEqual(job["RunAtLoad"] as? Bool, true)
+        XCTAssertEqual(job["KeepAlive"] as? Bool, true)
+
+        let filter = Process()
+        filter.executableURL = filterBinary
+        filter.arguments = ["--policy", paths.policy.path, "--upstream", "127.0.0.1",
+                            "--upstream-port", String(upstream.port.rawValue), "--port", "0"]
+        let startup = try start(filter)
+        defer { stopProcess(filter) }
+        let portText = startup.prefix { $0 != ";" }.split(separator: ":").last ?? ""
+        let port = try XCTUnwrap(NWEndpoint.Port(String(portText)))
+        let dns = NetworkUpstream(endpoint: .hostPort(host: "127.0.0.1", port: port), timeout: 1)
+        func assertDNS(_ domain: String, _ expected: UInt16) async throws {
+            for _ in 0..<60 {
+                let reply = try DNSMessage(await dns.exchange(DNSMessage.query(domain, type: 1), tcp: false))
+                if reply.rcode == expected { return }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            XCTFail("The running filter did not return rcode \(expected) for \(domain).")
+        }
+
+        let requested = Date(timeIntervalSince1970: TimeInterval(startTime))
+        let deadline = requested.addingTimeInterval(TimeInterval(week))
+        let listener = serveSiteBlocks { requested }
+        defer { listener.invalidate() }
+        func connection() -> NSXPCConnection { NSXPCConnection(listenerEndpoint: listener.endpoint) }
+        try await assertDNS("solo.example", 3)
+        try await assertDNS("sub.adult.example", 3)
+        try SiteBlockControl.requestRemoval("Solo.Example.", rule: "custom", over: connection())
+        try SiteBlockControl.requestRemoval("adult.example", rule: "adult", over: connection())
+        try SiteBlockControl.requestRemoval("solo.example", rule: "custom", over: connection())
+        var listed = try listedRemovals(listener)
+        XCTAssertEqual(listed.map(\.domain), ["solo.example", "adult.example"])
+        XCTAssertEqual(listed.map(\.deadline), [deadline, deadline])
+        XCTAssertEqual(listed.map(\.outcome), [.pending, .pending])
+
+        await manager.reconcileSiteRemovals(now: deadline.addingTimeInterval(-1))
+        try await assertDNS("solo.example", 3)
+        try await assertDNS("sub.adult.example", 3)
+        XCTAssertEqual(try listedRemovals(listener).map(\.outcome), [.pending, .pending])
+
+        // A restarted daemon applies the requests from disk once the deadline passes.
+        manager = ServiceManager(paths: paths, system: mac, log: { _ in })
+        await manager.reconcileSiteRemovals(now: deadline)
+        try await assertDNS("solo.example", 0)
+        try await assertDNS("sub.adult.example", 0)
+        try await assertDNS("keep.example", 3)
+        try await assertDNS("other.example", 3)
+        listed = try listedRemovals(listener)
+        XCTAssertEqual(listed.map(\.outcome), [.timedOut, .timedOut])
+        XCTAssertEqual(listed.map(\.applied), [true, true])
+        XCTAssertEqual(try manager.siteBlocks().allow, ["adult.example", "previous.example"])
+        XCTAssertFalse(try manager.siteBlocks().custom.contains("solo.example"))
+    }
+
+    func test_a_partner_added_after_a_solo_install_stops_solo_removals() async throws {
+        let requested = Date(timeIntervalSince1970: TimeInterval(startTime))
+        let deadline = requested.addingTimeInterval(TimeInterval(week))
+        let listener = serveSiteBlocks { requested }
+        defer { listener.invalidate() }
+        func connection() -> NSXPCConnection { NSXPCConnection(listenerEndpoint: listener.endpoint) }
+        func assertNeedsPairing(_ domain: String, line: UInt = #line) {
+            XCTAssertThrowsError(try SiteBlockControl.requestRemoval(domain, rule: "custom", over: connection()), line: line) {
+                XCTAssertTrue("\($0)".contains("configured pairing service"), "\($0)", line: line)
+            }
+        }
+        try install(upstreamPort: 1053)
+        try SiteBlockControl.requestRemoval("solo.example", rule: "custom", over: connection())
+        XCTAssertEqual(try listedRemovals(listener).map(\.deadline), [deadline])
+
+        // Partner settings reports the pairing service it uses for this Mac.
+        try SiteBlockControl.recordPartnerPairing(over: connection())
+        try SiteBlockControl.recordPartnerPairing(over: connection())
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: paths.partnerPairing.path)[.posixPermissions] as? Int, 0o644)
+        var listed = try listedRemovals(listener)
+        XCTAssertEqual(listed.map(\.outcome), [.cancelled])
+        await manager.reconcileSiteRemovals(now: deadline)
+        XCTAssertTrue(try manager.siteBlocks().custom.contains("solo.example"))
+        XCTAssertEqual(try manager.readSiteRemovals().map(\.applied), [false])
+        assertNeedsPairing("solo.example")
+        assertNeedsPairing("keep.example")
+        // A writer that chose a solo deadline before the partner was recorded is refused under the lock.
+        XCTAssertThrowsError(try manager.requestSiteRemoval("keep.example", rule: .custom, deadline: deadline))
+        XCTAssertEqual(try manager.readSiteRemovals().count, 1)
+
+        // If the marker appears without the cancellation (an interrupted write), the daemon
+        // cancels the open solo request instead of applying it at the deadline.
+        try FileManager.default.removeItem(at: paths.partnerPairing)
+        try SiteBlockControl.requestRemoval("keep.example", rule: "custom", over: connection())
+        try Data("{}".utf8).write(to: paths.partnerPairing)
+        await manager.reconcileSiteRemovals(now: deadline)
+        listed = try listedRemovals(listener)
+        XCTAssertEqual(listed.map(\.domain), ["solo.example", "keep.example"])
+        XCTAssertEqual(listed.map(\.outcome), [.cancelled, .cancelled])
+        XCTAssertEqual(try manager.siteBlocks().custom.filter { ["solo.example", "keep.example"].contains($0) }.count, 2)
+        try manager.uninstall()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.partnerPairing.path))
+    }
+
+    func test_removal_requests_keep_blocks_when_the_install_state_is_unknown_or_contradictory() async throws {
+        let later = Date(timeIntervalSince1970: TimeInterval(startTime + 2 * week))
+        let listener = serveSiteBlocks { Date(timeIntervalSince1970: TimeInterval(self.startTime)) }
+        defer { listener.invalidate() }
+        func request(_ domain: String) throws {
+            try SiteBlockControl.requestRemoval(domain, rule: "custom", over: NSXPCConnection(listenerEndpoint: listener.endpoint))
+        }
+        func assertRefused(_ containing: String, line: UInt = #line) {
+            XCTAssertThrowsError(try request("solo.example"), line: line) {
+                XCTAssertTrue("\($0)".contains(containing), "\($0)", line: line)
+            }
+            // Listing stays available read-only and shows that nothing was recorded.
+            XCTAssertEqual(try listedRemovals(listener).count, 0, line: line)
+            XCTAssertEqual(try manager.readSiteRemovals().count, 0, line: line)
+        }
+
+        // Solo install, but an uninstall event says it is being removed.
+        try install(upstreamPort: 1053)
+        try Data("{}".utf8).write(to: paths.uninstallEvent)
+        assertRefused("could not confirm")
+        try FileManager.default.removeItem(at: paths.uninstallEvent)
+
+        // Solo install, but a pairing configuration appeared.
+        try Data("{}".utf8).write(to: paths.partnerConfig)
+        assertRefused("could not confirm")
+        try FileManager.default.removeItem(at: paths.partnerConfig)
+
+        // A request saved without a deadline waits for a partner even on a solo install.
+        try manager.requestSiteRemoval("solo.example", rule: .custom)
+        await manager.reconcileSiteRemovals(now: later)
+        XCTAssertEqual(try manager.readSiteRemovals().map(\.outcome), [.pending])
+        XCTAssertTrue(try manager.siteBlocks().custom.contains("solo.example"))
+        try manager.uninstall()
+
+        // A record from before this change says nothing: it still needs a pairing service.
+        try install(upstreamPort: 1053)
+        var record = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: paths.recovery)) as? [String: Any])
+        XCTAssertEqual(record.removeValue(forKey: "pairingService") as? Bool, false)
+        try JSONSerialization.data(withJSONObject: record).write(to: paths.recovery)
+        assertRefused("configured pairing service")
+        try manager.uninstall()
+
+        // A partner install whose pairing configuration is gone.
+        let config = root.appendingPathComponent("config.json")
+        try JSONEncoder().encode(["origin": "https://pairing.example.test",
+                                  "ownerKey": String(repeating: "a", count: 43)]).write(to: config)
+        try install(upstreamPort: 1053, config: config)
+        let installed = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: paths.recovery)) as? [String: Any])
+        XCTAssertEqual(installed["pairingService"] as? Bool, true)
+        try FileManager.default.removeItem(at: paths.partnerConfig)
+        assertRefused("configured pairing service")
+        try manager.uninstall()
+    }
+
     func test_real_partner_decisions_reach_the_running_filter_after_restart_and_refresh() async throws {
         let upstream = try CommunityLoopback(tcp: false) { packet in
             guard let query = try? DNSMessage(Array(packet)) else { return Data() }

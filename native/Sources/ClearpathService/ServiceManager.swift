@@ -18,6 +18,8 @@ public struct ServicePaths: Sendable {
     var internetRecovery: URL { supportDirectory.appendingPathComponent("internet-recovery.json") }
     var communityListStatus: URL { supportDirectory.appendingPathComponent("community-list.json") }
     var partnerConfig: URL { supportDirectory.appendingPathComponent("partner-service.json") }
+    /// Present once the app reported a partner service for this Mac. Never removed until uninstall.
+    var partnerPairing: URL { supportDirectory.appendingPathComponent("partner-pairing.json") }
     var siteRemovals: URL { supportDirectory.appendingPathComponent("site-removals.json") }
     var uninstallEvent: URL { supportDirectory.appendingPathComponent("uninstall-event.json") }
     var pendingUninstallEvents: URL { root.appendingPathComponent("private/var/db/io.clearpath.uninstall") }
@@ -27,7 +29,7 @@ public struct ServicePaths: Sendable {
     /// Clearpath's files only, in removal order: the recovery record goes last.
     var owned: [URL] {
         [communityListPlist, siteBlockPlist, daemonPlist, filter, controlTool, policy, communityListStatus,
-         partnerConfig, uninstallEvent, siteRemovals, internetRecovery, recovery]
+         partnerConfig, partnerPairing, uninstallEvent, siteRemovals, internetRecovery, recovery]
     }
 }
 
@@ -51,6 +53,8 @@ public struct RecoveryRecord: Codable, Equatable, Sendable {
     public let upstreamPort: UInt16
     /// `scutil --dns` before install, kept as evidence of the resolvers in use.
     public let resolverState: String
+    /// Whether install wrote a pairing configuration. Records from before this field are nil.
+    public var pairingService: Bool? = nil
 }
 
 public struct ServiceStatus: Codable, Equatable, Sendable {
@@ -170,7 +174,8 @@ public final class ServiceManager {
         }
 
         let record = RecoveryRecord(locationID: location.id, createdAt: ISO8601DateFormatter().string(from: Date()), services: services,
-                                    upstream: chosen, upstreamPort: upstreamPort, resolverState: resolver.output)
+                                    upstream: chosen, upstreamPort: upstreamPort, resolverState: resolver.output,
+                                    pairingService: configData != nil)
         try makeDirectory(paths.supportDirectory)
         try withServiceLock {
             if initialList != nil, try status().setupInstallAvailable != true {
@@ -179,7 +184,7 @@ public final class ServiceManager {
             guard !fm.fileExists(atPath: paths.daemonPlist.path), !fm.fileExists(atPath: paths.siteBlockPlist.path),
                   !fm.fileExists(atPath: paths.communityListPlist.path), !fm.fileExists(atPath: paths.communityListStatus.path),
                   !fm.fileExists(atPath: paths.internetRecovery.path), !fm.fileExists(atPath: paths.partnerConfig.path),
-                  !fm.fileExists(atPath: paths.siteRemovals.path) else {
+                  !fm.fileExists(atPath: paths.siteRemovals.path), !fm.fileExists(atPath: paths.partnerPairing.path) else {
                 throw ServiceError.refused("An earlier Clearpath install is present. Run uninstall first.")
             }
             try writeFile(try Self.encoder.encode(record), to: paths.recovery, mode: 0o644, exclusive: true)
@@ -201,7 +206,7 @@ public final class ServiceManager {
                     throw ServiceError.failed("The filter did not answer on \(Self.listenAddress):\(Self.listenPort) within \(Int(Self.readyTimeout)) seconds.")
                 }
                 if controlData != nil {
-                    try writeFile(try siteBlockPlist(reconcileRemovals: configData != nil), to: paths.siteBlockPlist, mode: 0o644)
+                    try writeFile(try siteBlockPlist(), to: paths.siteBlockPlist, mode: 0o644)
                     try check(system.run(.launchctl, ["bootstrap", "system", paths.siteBlockPlist.path]), "launchctl bootstrap site-block service")
                 }
                 log("Filter answering on \(Self.listenAddress):\(Self.listenPort).")
@@ -463,13 +468,14 @@ public final class ServiceManager {
         return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
     }
 
-    private func siteBlockPlist(reconcileRemovals: Bool) throws -> Data {
+    /// Always running, so a partner decision or a solo deadline applies without the app open.
+    private func siteBlockPlist() throws -> Data {
         let plist: [String: Any] = [
             "Label": ServicePaths.siteBlockLabel,
             "ProgramArguments": [paths.controlTool.path, "serve-site-blocks"],
             "MachServices": [ServicePaths.siteBlockLabel: true],
-            "RunAtLoad": reconcileRemovals,
-            "KeepAlive": reconcileRemovals,
+            "RunAtLoad": true,
+            "KeepAlive": true,
         ]
         return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
     }
