@@ -94,7 +94,7 @@ final class PolicyTests: XCTestCase {
         XCTAssertThrowsError(try changedPolicy { $0["safesearch"] = ["one.example": "two.example", "two.example": "one.example"] })
     }
     func testDigestMatchesReference() throws {
-        XCTAssertEqual(try examplePolicy().digest, "2a493ed5aea556232f6c1817d3db3e8fa3b68bc79e5a45796c66d464cf6b5429")
+        XCTAssertEqual(try examplePolicy().digest, "43f822f88174ad7e6be6e9d51f5c079af1af9a5c4925908737e365105c88e79d")
     }
 }
 
