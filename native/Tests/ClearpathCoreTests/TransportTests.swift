@@ -163,20 +163,30 @@ final class TransportTests: XCTestCase {
         XCTAssertEqual(vpnName.answers.first?.data, [100, 64, 0, 7])
     }
 
-    func testTheNetworkResolverCheckFollowsTheFilterRouteAndNeedsAnAnswer() throws {
+    func testTheNetworkResolverCheckAsksTheRecordedServiceNotAVPNRoute() throws {
         let router = try LocalDNSServer(tcp: false)
         defer { router.stop() }
         let silent = try LocalDNSServer(tcp: false, silent: true)
         defer { silent.stop() }
-        func network(_ port: NWEndpoint.Port) -> NetworkDNS {
-            let record = RecoveryRecord(createdAt: "", services: [], upstream: "192.0.2.1", upstreamPort: port.rawValue, resolverState: "")
+        // The VPN is the primary service and swallows everything; Ethernet is what Clearpath recorded.
+        func network(_ port: NWEndpoint.Port, ethernetActive: Bool = true) -> NetworkDNS {
+            let record = RecoveryRecord(createdAt: "", services: [ServiceDNS(name: "Ethernet", servers: [], id: "ethernet")],
+                                        upstream: "192.0.2.1", upstreamPort: port.rawValue, resolverState: "")
             return NetworkDNS(record: record, listenPort: 53, timeout: 0.5) {
-                ["State:/Network/Global/IPv4": ["PrimaryService": "ethernet"],
-                 "State:/Network/Service/ethernet/DNS": ["ServerAddresses": ["127.0.0.1"]]]
+                var state: [String: [String: Any]] = [
+                    "State:/Network/Global/DNS": ["ServerAddresses": ["::1"], "ServerPort": Int(silent.port.rawValue)],
+                    "State:/Network/Global/IPv4": ["PrimaryService": "vpn"],
+                    "State:/Network/Service/vpn/IPv4": ["InterfaceName": "lo0"],
+                    "State:/Network/Service/vpn/DNS": ["ServerAddresses": ["::1"], "SupplementalMatchDomains": [""]],
+                    "State:/Network/Service/ethernet/DNS": ["ServerAddresses": ["127.0.0.1"]],
+                ]
+                if ethernetActive { state["State:/Network/Service/ethernet/IPv4"] = ["InterfaceName": "lo0"] }
+                return state
             }
         }
-        XCTAssertTrue(MacSystem.resolves(through: network(router.port)))
-        XCTAssertFalse(MacSystem.resolves(through: network(silent.port)))
+        XCTAssertTrue(MacSystem.resolves(through: network(router.port).networkResolver()))
+        XCTAssertFalse(MacSystem.resolves(through: network(silent.port).networkResolver()))
+        XCTAssertFalse(MacSystem.resolves(through: network(router.port, ethernetActive: false).networkResolver()))
     }
 
     func testPrivateTCPRetryUsesTheSameScopeWhenTheNetworkChanges() async throws {

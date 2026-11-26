@@ -37,8 +37,8 @@ public protocol SystemControl {
     /// True when the DNS server on loopback resolves a real lookup within two seconds. The
     /// question is the `com` name servers, which every working resolver answers.
     func filterResolves(port: UInt16) -> Bool
-    /// True when the network's own resolver, the one the filter forwards ordinary names to,
-    /// answers the same lookup directly within two seconds.
+    /// True when the resolvers Restore internet would hand back (each recorded service's saved
+    /// or negotiated DNS, on its own interface) answer the same lookup directly within two seconds.
     func networkResolves(_ record: RecoveryRecord) -> Bool
     func pause(seconds: Double)
 }
@@ -133,7 +133,7 @@ public struct MacSystem: SystemControl {
 
     public func networkResolves(_ record: RecoveryRecord) -> Bool {
         guard let network = try? NetworkDNS(record: record, listenPort: ServiceManager.listenPort, timeout: 2) else { return false }
-        return Self.resolves(through: network)
+        return Self.resolves(through: network.networkResolver())
     }
 
     /// The `com` name servers answered with NOERROR within three seconds.

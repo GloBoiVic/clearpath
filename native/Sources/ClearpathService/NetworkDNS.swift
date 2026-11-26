@@ -52,6 +52,36 @@ public final class NetworkDNS: DNSUpstream, @unchecked Sendable {
         })
     }
 
+    /// The resolvers Restore internet would hand back: each recorded service's saved manual DNS
+    /// or, for automatic DNS, its negotiated servers, on that service's own interface, primary
+    /// first. Unlike `forQuestion`, this never follows a VPN's scopes, so it shows whether going
+    /// around Clearpath would work even when the filter's own route loops.
+    public func networkResolver() -> any DNSUpstream {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let state = readState(), let port = NWEndpoint.Port(rawValue: self.port), self.port > 0 else {
+            return SelectedRoute(upstreams: [])
+        }
+        let primary = ["IPv4", "IPv6"].compactMap { state["State:/Network/Global/" + $0]?["PrimaryService"] as? String }
+        let ids = saved.keys.sorted { (primary.contains($0) ? 0 : 1, $0) < (primary.contains($1) ? 0 : 1, $1) }
+        var targets: [(NWEndpoint, NWInterface?)] = []
+        var seen = Set<NWEndpoint.Host>()
+        for id in ids {
+            let key = "State:/Network/Service/" + id
+            let name = state[key + "/IPv4"]?["InterfaceName"] as? String ?? state[key + "/IPv6"]?["InterfaceName"] as? String
+            guard let name, let interface = IPv6Address("fe80::%\(name)")?.interface else { continue }  // not active
+            let servers = saved[id].flatMap { $0.isEmpty ? nil : $0 } ?? state[key + "/DNS"]?["ServerAddresses"] as? [String] ?? []
+            for text in servers {
+                guard let host = Self.resolverHost(text, interface: interface), seen.insert(host).inserted,
+                      self.port != listenPort || !Self.isLoopback(host) else { continue }
+                targets.append((.hostPort(host: host, port: port), interface))
+            }
+        }
+        return SelectedRoute(upstreams: targets.map { endpoint, interface in
+            NetworkUpstream(endpoint: endpoint, interface: interface, timeout: timeout / Double(targets.count))
+        })
+    }
+
     private struct SelectedRoute: DNSUpstream {
         let upstreams: [NetworkUpstream]
 
