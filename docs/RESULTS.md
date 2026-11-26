@@ -215,9 +215,9 @@ If something goes wrong, use the first step that works:
    sudo "/Library/Application Support/Clearpath/clearpath-service" uninstall   # DNS back, then the filter and its jobs removed
    ```
 
-   `uninstall` restores DNS from `recovery.json` and waits until macOS stops using `127.0.0.1`. Only then does it stop the three jobs and remove Clearpath's own files. After it, drag `/Applications/Clearpath.app` to the Trash. Then remove **Clearpath Browser Policies** in Device Management and Clearpath from Login Items, and restart Chrome and Firefox. These commands are the ones the app runs. #9 proved `clearpath-service uninstall` in a VM ([Filter service in a disposable VM](#filter-service-in-a-disposable-vm--2026-11-21)); this run didn't call them by hand.
+   `uninstall` restores DNS from `recovery.json` and waits until macOS stops using `127.0.0.1`. Only then does it stop the three jobs and remove Clearpath's own files. After it, drag `/Applications/Clearpath.app` to the Trash. Then remove **Clearpath Browser Policies** in Device Management and Clearpath from Login Items, and restart Chrome and Firefox. They use the same tool and DNS-restore path as the app. #9 proved `clearpath-service uninstall` in a VM ([Filter service in a disposable VM](#filter-service-in-a-disposable-vm--2026-11-21)); this run didn't call them by hand.
 
-   Last resort, only if that tool is missing or refuses: set each service back to automatic DNS, `sudo networksetup -setdnsservers "Wi-Fi" Empty` (repeat with each name from `networksetup -listallnetworkservices` that shows `127.0.0.1`). Then ask for help before deleting anything.
+   Last resort, only if that tool is missing or refuses: for each service that shows `127.0.0.1` in `networksetup -getdnsservers "<service>"`, set it back to what `~/Desktop/clearpath-dns-before.txt` and the before commands recorded. Use `sudo networksetup -setdnsservers "Wi-Fi" Empty` if that service was automatic, or `sudo networksetup -setdnsservers "Wi-Fi" <saved servers>` if it had its own. Then ask for help before deleting anything.
 4. **Check:** compare `scutil --dns` with `~/Desktop/clearpath-dns-before.txt`, and confirm that ordinary sites load.
 
 Each of these steps on Victor's Mac is a Hard stop: he runs it himself after saying yes in chat.
