@@ -1,5 +1,6 @@
 import Foundation
 import SystemConfiguration
+import ClearpathCore
 
 /// The macOS tools the service manager drives, by absolute path so `PATH` cannot swap them.
 public enum Tool: String, Sendable {
@@ -33,6 +34,9 @@ public protocol SystemControl {
     /// True when a DNS server on loopback answers a header-only probe with FORMERR. The probe
     /// carries no name, so the filter answers it locally and nothing goes upstream.
     func filterAnswers(port: UInt16) -> Bool
+    /// True when the DNS server on loopback resolves a real lookup within two seconds. The
+    /// question is the `com` name servers, which every working resolver answers.
+    func filterResolves(port: UInt16) -> Bool
     func pause(seconds: Double)
 }
 
@@ -103,6 +107,25 @@ public struct MacSystem: SystemControl {
         let count = recv(fd, &reply, reply.count, 0)
         // Same ID, a response (QR set) and FORMERR (rcode 1): a DNS server, not just an open port.
         return count >= 12 && reply[0] == probe[0] && reply[1] == probe[1] && reply[2] & 0x80 != 0 && reply[3] & 0x0F == 1
+    }
+
+    public func filterResolves(port: UInt16) -> Bool {
+        let fd = socket(AF_INET, SOCK_DGRAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var timeout = timeval(tv_sec: 2, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        var address = loopback(port: port)
+        let connected = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard connected == 0, let query = try? DNSMessage(DNSMessage.query("com", type: 2)),
+              send(fd, query.wire, query.wire.count, 0) == query.wire.count else { return false }
+        var reply = [UInt8](repeating: 0, count: 1232)
+        let count = recv(fd, &reply, reply.count, 0)
+        guard count > 0, let response = try? DNSMessage(Array(reply.prefix(count))),
+              (try? response.validateResponse(to: query)) != nil else { return false }
+        return response.rcode == 0
     }
 
     public func pause(seconds: Double) { Thread.sleep(forTimeInterval: seconds) }

@@ -41,6 +41,7 @@ final class FakeMac: SystemControl {
     var communityListJobLoaded = false
     var communityListJobStarts = true
     var filterStarts = true
+    var filterResolvesLookups = true
     var portFree = true
     var ignoreSetFor: String?
     var onPause: () -> Void = {}
@@ -131,6 +132,7 @@ final class FakeMac: SystemControl {
     func portIsFree(_ port: UInt16) -> Bool { portFree }
     func networkLocation() throws -> NetworkLocation { NetworkLocation(id: locationID, serviceIDs: identifiers) }
     func filterAnswers(port: UInt16) -> Bool { loaded && filterStarts }
+    func filterResolves(port: UInt16) -> Bool { filterAnswers(port: port) && filterResolvesLookups }
     func pause(seconds: Double) { onPause() }
 
     var dns: [String: [String]] { Dictionary(uniqueKeysWithValues: services.map { ($0.name, $0.servers) }) }
@@ -639,6 +641,19 @@ final class ServiceTests: XCTestCase {
         XCTAssertEqual(Set(mac.dns.values), [["127.0.0.1"]])
         XCTAssertNil(mac.index(of: "/usr/sbin/networksetup -setdnsservers"))
         XCTAssertNil(try manager.status().restoreEvent)
+    }
+
+    func test_restore_recovers_dns_while_the_filter_runs_but_resolves_nothing() throws {
+        // A filter forwarding into a DNS loop (#73) or to a dead upstream still answers the
+        // nameless probe, but every lookup fails (#74).
+        try install()
+        mac.filterResolvesLookups = false
+
+        try manager.restoreInternet()
+
+        XCTAssertEqual(mac.dns, original)
+        XCTAssertEqual(try manager.status().recovery, .restored)
+        XCTAssertNotNil(try manager.status().restoreEvent)
     }
 
     func test_restore_recovers_original_dns_and_records_one_event_without_uninstalling() throws {

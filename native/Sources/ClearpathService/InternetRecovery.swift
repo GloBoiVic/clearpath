@@ -45,7 +45,7 @@ extension ServiceManager {
                 guard try allServicesUseFilter() else {
                     throw ServiceError.refused("Clearpath could not verify that system DNS uses the filter.")
                 }
-                guard !waitForFilter() else {
+                guard !filterRecovered() else {
                     throw ServiceError.refused("The filter is answering. DNS was left in place.")
                 }
                 _ = try recoveryLocation(original)
@@ -79,6 +79,21 @@ extension ServiceManager {
         } else {
             status.recovery = try originalDNSMatches(original, location: location) ? .restored : .unknown
         }
+    }
+
+    /// Restore leaves DNS alone only when the filter has restarted and resolves again. A filter
+    /// stuck in a DNS loop still answers the nameless probe at times, but resolves nothing.
+    private func filterRecovered() -> Bool {
+        var waited = 0.0
+        while waited < Self.readyTimeout {
+            if system.filterAnswers(port: Self.listenPort) {
+                if system.filterResolves(port: Self.listenPort) { return true }
+                waited += 2  // the lookup's own timeout
+            }
+            system.pause(seconds: 0.25)
+            waited += 0.25
+        }
+        return false
     }
 
     private func allServicesUseFilter() throws -> Bool {
