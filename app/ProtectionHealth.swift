@@ -83,7 +83,7 @@ enum ProtectionState: Equatable {
 final class ProtectionHealth: ObservableObject {
     @Published private(set) var state: ProtectionState = .unknown
     @Published private(set) var restoreAvailable = false
-    @Published private(set) var restoreFailed = false
+    @Published private(set) var restoreError: String?
     var onStateChange: (() -> Void)?
 
     private var checking = false
@@ -120,12 +120,12 @@ final class ProtectionHealth: ObservableObject {
     func restore() async {
         guard state.offersRestore, restoreAvailable else { return }
         restoring = true
-        restoreFailed = false
+        restoreError = nil
         updateState(.restoring)
-        let completed = await Task.detached(priority: .userInitiated) { RestoreCommand.run() }.value
+        let outcome = await Task.detached(priority: .userInitiated) { RestoreCommand.run() }.value
         restoring = false
         await refresh()
-        restoreFailed = !completed && state != .restored && state != .protected
+        restoreError = state == .restored || state == .protected ? nil : outcome.message
         if state == .restoring { updateState(.unknown) }
         onStateChange?()
     }
@@ -133,20 +133,22 @@ final class ProtectionHealth: ObservableObject {
     private func updateState(_ next: ProtectionState) {
         guard state != next else { return }
         state = next
-        if next == .restored || next == .protected { restoreFailed = false }
+        if next == .restored || next == .protected { restoreError = nil }
         onStateChange?()
     }
 }
 
 private enum RestoreCommand {
-    static func run() -> Bool {
+    static func run() -> RestoreOutcome {
         // The privileged command has no interpolated input and never runs an executable
         // from the user-writable app bundle. Reject a replaced path before asking for approval.
         guard isRootControlled("/", kind: S_IFDIR),
               isRootControlled("/Library", kind: S_IFDIR),
               isRootControlled("/Library/Application Support", kind: S_IFDIR),
               isRootControlled("/Library/Application Support/Clearpath", kind: S_IFDIR),
-              isRootControlled("/Library/Application Support/Clearpath/clearpath-service", kind: S_IFREG) else { return false }
+              isRootControlled("/Library/Application Support/Clearpath/clearpath-service", kind: S_IFREG) else {
+            return .failed(reason: nil)
+        }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -154,13 +156,15 @@ private enum RestoreCommand {
         process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        let errors = Pipe()
+        process.standardError = errors
         do {
             try process.run()
+            let data = errors.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
-            return process.terminationStatus == 0
+            return RestoreOutcome.from(status: process.terminationStatus, errorOutput: String(decoding: data.prefix(4096), as: UTF8.self))
         } catch {
-            return false
+            return .failed(reason: nil)
         }
     }
 
