@@ -2,12 +2,14 @@
 
 The guest helpers are run only with --dry-run or with bad input, so no test posts a
 mouse or key event to this Mac. The OCR helper runs on an image the test draws in a
-temp folder. Nothing here starts a VM or touches DNS, profiles or credentials.
+temp folder. The DNS fixture runs on loopback high ports with a fixed loopback target.
+Nothing here starts a VM or touches DNS, profiles or credentials.
 """
 import os
 from pathlib import Path
 import platform
 import pty
+import socket
 import subprocess
 import tempfile
 import unittest
@@ -118,6 +120,34 @@ class VMHelperTests(unittest.TestCase):
 
             self.assertEqual(run("vm-ocr", "--find", "no such words", str(image)).returncode, 1)
             self.assertEqual(run("vm-ocr", str(Path(folder) / "missing.png")).returncode, 2)
+
+    def test_dns_fixture_answers_and_the_vpn_stand_in_answers_its_suffix_and_forwards_the_rest(self):
+        from dnslib import DNSRecord
+
+        def start(*args):
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+                probe.bind(("127.0.0.1", 0))
+                port = probe.getsockname()[1]
+            proc = subprocess.Popen([str(TOOLS / "vm-dns-fixture"), args[0], "127.0.0.1", str(port), *args[1:]],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.addCleanup(proc.wait, 5)
+            self.addCleanup(proc.kill)
+            self.assertIn("fixture on 127.0.0.1", proc.stdout.readline())
+            return proc, port
+
+        def ask(port, name, qtype="A"):
+            response = DNSRecord.parse(DNSRecord.question(name, qtype).send("127.0.0.1", port, timeout=3))
+            return response.header.rcode, [str(rr.rdata) for rr in response.rr]
+
+        router, router_port = start("answer")
+        vpn, vpn_port = start("vpn", "tailnet.example", "127.0.0.1", str(router_port))
+        self.assertEqual(ask(router_port, "allowed.example"), (0, ["192.0.2.42"]))
+        self.assertEqual(ask(router_port, "allowed.example", "AAAA"), (0, []))
+        self.assertEqual(ask(vpn_port, "host.tailnet.example"), (0, ["100.64.0.7"]))
+        self.assertEqual(ask(vpn_port, "other.example"), (0, ["192.0.2.42"]))
+        self.assertEqual(vpn.stdout.readline().strip(), "vpn host.tailnet.example 1")
+        self.assertEqual(vpn.stdout.readline().strip(), "vpn other.example 1 via 127.0.0.1")
+        self.assertEqual(run("vm-dns-fixture", "vpn", "127.0.0.1", "53").returncode, 2)
 
 
 if __name__ == "__main__":
