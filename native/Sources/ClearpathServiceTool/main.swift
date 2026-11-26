@@ -13,6 +13,7 @@ usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--
        clearpath-service block-site DOMAIN
        clearpath-service request-site-removal custom|adult DOMAIN
        clearpath-service site-removals
+       clearpath-service record-partner-pairing
        clearpath-service refresh-community-list
        clearpath-service browser-profile
   install records every network service's DNS, starts the filter on 127.0.0.1:53 and points DNS at it.
@@ -23,6 +24,7 @@ usage: clearpath-service install --filter PATH --policy PATH [--upstream IP] [--
   block-site adds a custom block through the installed local service.
   request-site-removal asks the installed service to request removal of the selected block rule.
   site-removals prints the installed service's removal requests as JSON.
+  record-partner-pairing tells the installed service this Mac uses a partner service, ending solo removals.
   refresh-community-list checks the weekly community list schedule as root.
   browser-profile writes Clearpath's removable Chrome and Firefox profile to standard output.
 
@@ -129,6 +131,9 @@ case "request-site-removal":
 case "site-removals":
     guard arguments.isEmpty else { fail(usage, code: 2) }
     run { print(try SiteBlockControl.listRemovals()) }
+case "record-partner-pairing":
+    guard arguments.isEmpty else { fail(usage, code: 2) }
+    run { try SiteBlockControl.recordPartnerPairing() }
 case "serve-site-blocks":
     guard arguments.isEmpty else { fail(usage, code: 2) }
     run { try SiteBlockControl.serve(manager: manager) }

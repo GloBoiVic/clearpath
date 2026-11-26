@@ -63,6 +63,7 @@ extension ServiceManager {
     func add(_ domain: String, reply: @escaping (String?, String?) -> Void)
     func requestRemoval(_ domain: String, rule: String, reply: @escaping (String?, String?) -> Void)
     func listRemovals(reply: @escaping (String?, String?) -> Void)
+    func recordPartnerPairing(reply: @escaping (String?, String?) -> Void)
 }
 
 /// The current console user can add blocks and ask for removals. Only an
@@ -152,13 +153,25 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
         func listRemovals(reply: @escaping (String?, String?) -> Void) {
             guard authorized() else { reply(nil, "Sign in to this Mac to see requests."); return }
             do {
-                _ = try manager.removalAuthority()
+                // Listing works in every installed state, so a cancelled or refused request stays visible.
                 let data = try ServiceManager.removalEncoder.encode(manager.readSiteRemovals())
                 reply(String(decoding: data, as: UTF8.self), nil)
             } catch ServiceError.refused(let message) {
                 reply(nil, message)
             } catch {
                 reply(nil, "Clearpath could not load site removal requests.")
+            }
+        }
+
+        func recordPartnerPairing(reply: @escaping (String?, String?) -> Void) {
+            guard authorized() else { reply(nil, "Sign in to this Mac to record a partner."); return }
+            do {
+                try manager.recordPartnerPairing()
+                reply("", nil)
+            } catch ServiceError.refused(let message) {
+                reply(nil, message)
+            } catch {
+                reply(nil, "Clearpath could not record the partner service.")
             }
         }
     }
@@ -190,6 +203,14 @@ public final class SiteBlockControl: NSObject, NSXPCListenerDelegate {
 
     static func listRemovals(over connection: NSXPCConnection) throws -> String {
         try call(over: connection) { $0.listRemovals(reply: $1) }
+    }
+
+    public static func recordPartnerPairing() throws {
+        try recordPartnerPairing(over: NSXPCConnection(machServiceName: ServicePaths.siteBlockLabel, options: .privileged))
+    }
+
+    static func recordPartnerPairing(over connection: NSXPCConnection) throws {
+        _ = try call(over: connection) { $0.recordPartnerPairing(reply: $1) }
     }
 
     private static func call(over connection: NSXPCConnection,

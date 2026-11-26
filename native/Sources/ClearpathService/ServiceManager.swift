@@ -18,6 +18,8 @@ public struct ServicePaths: Sendable {
     var internetRecovery: URL { supportDirectory.appendingPathComponent("internet-recovery.json") }
     var communityListStatus: URL { supportDirectory.appendingPathComponent("community-list.json") }
     var partnerConfig: URL { supportDirectory.appendingPathComponent("partner-service.json") }
+    /// Present once the app reported a partner service for this Mac. Never removed until uninstall.
+    var partnerPairing: URL { supportDirectory.appendingPathComponent("partner-pairing.json") }
     var siteRemovals: URL { supportDirectory.appendingPathComponent("site-removals.json") }
     var uninstallEvent: URL { supportDirectory.appendingPathComponent("uninstall-event.json") }
     var pendingUninstallEvents: URL { root.appendingPathComponent("private/var/db/io.clearpath.uninstall") }
@@ -27,7 +29,7 @@ public struct ServicePaths: Sendable {
     /// Clearpath's files only, in removal order: the recovery record goes last.
     var owned: [URL] {
         [communityListPlist, siteBlockPlist, daemonPlist, filter, controlTool, policy, communityListStatus,
-         partnerConfig, uninstallEvent, siteRemovals, internetRecovery, recovery]
+         partnerConfig, partnerPairing, uninstallEvent, siteRemovals, internetRecovery, recovery]
     }
 }
 
@@ -182,7 +184,7 @@ public final class ServiceManager {
             guard !fm.fileExists(atPath: paths.daemonPlist.path), !fm.fileExists(atPath: paths.siteBlockPlist.path),
                   !fm.fileExists(atPath: paths.communityListPlist.path), !fm.fileExists(atPath: paths.communityListStatus.path),
                   !fm.fileExists(atPath: paths.internetRecovery.path), !fm.fileExists(atPath: paths.partnerConfig.path),
-                  !fm.fileExists(atPath: paths.siteRemovals.path) else {
+                  !fm.fileExists(atPath: paths.siteRemovals.path), !fm.fileExists(atPath: paths.partnerPairing.path) else {
                 throw ServiceError.refused("An earlier Clearpath install is present. Run uninstall first.")
             }
             try writeFile(try Self.encoder.encode(record), to: paths.recovery, mode: 0o644, exclusive: true)

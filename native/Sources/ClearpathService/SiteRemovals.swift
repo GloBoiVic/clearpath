@@ -7,6 +7,8 @@ enum RemovalRule: String, Codable {
 
 enum RemovalOutcome: String, Codable {
     case pending, approved, denied, timedOut = "timed_out"
+    /// A solo request stopped because a partner was added before its deadline.
+    case cancelled
 }
 
 struct SiteRemoval: Codable {
@@ -19,7 +21,7 @@ struct SiteRemoval: Codable {
     /// Set only on a solo install, where no partner can decide: the request applies at this time.
     var deadline: Date? = nil
 
-    var finished: Bool { applied || outcome == .denied }
+    var finished: Bool { applied || outcome == .denied || outcome == .cancelled }
 }
 
 /// Who decides a removal request for this install.
@@ -63,22 +65,49 @@ extension ServiceManager {
         return encoder
     }()
 
-    /// An install is solo only when its record says it was installed without a pairing service
-    /// and neither a pairing configuration nor an uninstall event exists. Any other state needs
-    /// the pairing service, so a missing or contradictory record keeps every block in place.
+    /// An install is solo only while its record says it was installed without a pairing service,
+    /// no partner pairing has been reported, and neither a pairing configuration nor an uninstall
+    /// event exists. Any other state needs the pairing service, so it keeps every block in place.
     func removalAuthority() throws -> RemovalAuthority {
         guard let record = try readRecord() else {
             throw ServiceError.refused("The Clearpath filter service is not installed.")
         }
-        guard record.pairingService == false else { return .partner(try pairingClient()) }
-        func absent(_ url: URL) -> Bool {
-            var info = stat()
-            return lstat(url.path, &info) != 0 && errno == ENOENT
+        if record.pairingService == false {
+            guard absent(paths.partnerConfig), absent(paths.uninstallEvent) else {
+                throw ServiceError.refused("Clearpath could not confirm how this install decides removals.")
+            }
+            if absent(paths.partnerPairing) { return .solo }
         }
-        guard absent(paths.partnerConfig), absent(paths.uninstallEvent) else {
-            throw ServiceError.refused("Clearpath could not confirm how this install decides removals.")
+        return .partner(try pairingClient())
+    }
+
+    private func absent(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) != 0 && errno == ENOENT
+    }
+
+    /// The app reports a partner service it uses (Partner settings). From then on this install is
+    /// never solo: removals need the pairing service, and open solo requests are cancelled.
+    func recordPartnerPairing() throws {
+        guard system.isRoot else { throw ServiceError.refused("The installed policy writer must run as root.") }
+        try withServiceLock {
+            guard try readRecord() != nil else { throw ServiceError.refused("The Clearpath filter service is not installed.") }
+            if absent(paths.partnerPairing) {
+                try writeFile(Data("{}".utf8), to: paths.partnerPairing, mode: 0o644, exclusive: true)
+            }
+            try cancelSoloRemovals()
         }
-        return .solo
+    }
+
+    /// Call with the service lock held. A request with a deadline never applies once a partner exists.
+    private func cancelSoloRemovals() throws {
+        var requests = try readSiteRemovals()
+        var changed = false
+        for index in requests.indices where !requests[index].finished && requests[index].deadline != nil {
+            requests[index].outcome = .cancelled
+            changed = true
+        }
+        if changed { try saveSiteRemovals(requests) }
     }
 
     func requestSiteRemoval(_ input: String, rule: RemovalRule, deadline: Date? = nil) throws {
@@ -87,6 +116,10 @@ extension ServiceManager {
             throw ServiceError.refused("Enter a domain such as example.com.")
         }
         try withServiceLock {
+            // The caller chose the deadline before taking the lock; a partner may have been added since.
+            if deadline != nil, case .partner = try removalAuthority() {
+                throw ServiceError.refused("A partner was added. Site removal requests now need the pairing service.")
+            }
             let policy = try installedPolicy()
             var requests = try readSiteRemovals()
             if requests.contains(where: { !$0.finished && $0.rule == rule && $0.domain == domain }) { return }
@@ -146,6 +179,10 @@ extension ServiceManager {
 
     /// The site-block daemon runs this every few seconds. An unknown install state does nothing.
     func reconcileSiteRemovals(now: Date) async {
+        if system.isRoot, !absent(paths.partnerPairing),
+           (try? readSiteRemovals())?.contains(where: { !$0.finished && $0.deadline != nil }) == true {
+            try? withServiceLock { try cancelSoloRemovals() }
+        }
         switch try? removalAuthority() {
         case .partner(let client)?: await reconcileSiteRemovals(client: client)
         case .solo?: applyDueSoloRemovals(now: now)

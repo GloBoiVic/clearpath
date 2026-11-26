@@ -168,6 +168,7 @@ private final class PartnerModel: ObservableObject {
         guard !busy else { return }
         busy = true
         defer { busy = false }
+        await SiteBlockModel.recordPartnerPairing()
         do {
             try await action()
             try await load()

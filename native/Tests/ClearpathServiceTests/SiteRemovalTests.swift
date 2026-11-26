@@ -140,6 +140,50 @@ final class SiteRemovalTests: XCTestCase {
         XCTAssertFalse(try manager.siteBlocks().custom.contains("solo.example"))
     }
 
+    func test_a_partner_added_after_a_solo_install_stops_solo_removals() async throws {
+        let requested = Date(timeIntervalSince1970: TimeInterval(startTime))
+        let deadline = requested.addingTimeInterval(TimeInterval(week))
+        let listener = serveSiteBlocks { requested }
+        defer { listener.invalidate() }
+        func connection() -> NSXPCConnection { NSXPCConnection(listenerEndpoint: listener.endpoint) }
+        func assertNeedsPairing(_ domain: String, line: UInt = #line) {
+            XCTAssertThrowsError(try SiteBlockControl.requestRemoval(domain, rule: "custom", over: connection()), line: line) {
+                XCTAssertTrue("\($0)".contains("configured pairing service"), "\($0)", line: line)
+            }
+        }
+        try install(upstreamPort: 1053)
+        try SiteBlockControl.requestRemoval("solo.example", rule: "custom", over: connection())
+        XCTAssertEqual(try listedRemovals(listener).map(\.deadline), [deadline])
+
+        // Partner settings reports the pairing service it uses for this Mac.
+        try SiteBlockControl.recordPartnerPairing(over: connection())
+        try SiteBlockControl.recordPartnerPairing(over: connection())
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: paths.partnerPairing.path)[.posixPermissions] as? Int, 0o644)
+        var listed = try listedRemovals(listener)
+        XCTAssertEqual(listed.map(\.outcome), [.cancelled])
+        await manager.reconcileSiteRemovals(now: deadline)
+        XCTAssertTrue(try manager.siteBlocks().custom.contains("solo.example"))
+        XCTAssertEqual(try manager.readSiteRemovals().map(\.applied), [false])
+        assertNeedsPairing("solo.example")
+        assertNeedsPairing("keep.example")
+        // A writer that chose a solo deadline before the partner was recorded is refused under the lock.
+        XCTAssertThrowsError(try manager.requestSiteRemoval("keep.example", rule: .custom, deadline: deadline))
+        XCTAssertEqual(try manager.readSiteRemovals().count, 1)
+
+        // If the marker appears without the cancellation (an interrupted write), the daemon
+        // cancels the open solo request instead of applying it at the deadline.
+        try FileManager.default.removeItem(at: paths.partnerPairing)
+        try SiteBlockControl.requestRemoval("keep.example", rule: "custom", over: connection())
+        try Data("{}".utf8).write(to: paths.partnerPairing)
+        await manager.reconcileSiteRemovals(now: deadline)
+        listed = try listedRemovals(listener)
+        XCTAssertEqual(listed.map(\.domain), ["solo.example", "keep.example"])
+        XCTAssertEqual(listed.map(\.outcome), [.cancelled, .cancelled])
+        XCTAssertEqual(try manager.siteBlocks().custom.filter { ["solo.example", "keep.example"].contains($0) }.count, 2)
+        try manager.uninstall()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.partnerPairing.path))
+    }
+
     func test_removal_requests_keep_blocks_when_the_install_state_is_unknown_or_contradictory() async throws {
         let later = Date(timeIntervalSince1970: TimeInterval(startTime + 2 * week))
         let listener = serveSiteBlocks { Date(timeIntervalSince1970: TimeInterval(self.startTime)) }
@@ -151,7 +195,8 @@ final class SiteRemovalTests: XCTestCase {
             XCTAssertThrowsError(try request("solo.example"), line: line) {
                 XCTAssertTrue("\($0)".contains(containing), "\($0)", line: line)
             }
-            XCTAssertThrowsError(try listedRemovals(listener), line: line)
+            // Listing stays available read-only and shows that nothing was recorded.
+            XCTAssertEqual(try listedRemovals(listener).count, 0, line: line)
             XCTAssertEqual(try manager.readSiteRemovals().count, 0, line: line)
         }
 

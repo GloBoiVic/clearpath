@@ -30,7 +30,7 @@ enum SiteBlockRule: String, Decodable {
 
 struct SiteRemovalRequest: Decodable, Identifiable {
     enum Outcome: String, Decodable {
-        case pending, approved, denied, timedOut = "timed_out"
+        case pending, approved, denied, timedOut = "timed_out", cancelled
     }
 
     let id: UUID
@@ -42,7 +42,7 @@ struct SiteRemovalRequest: Decodable, Identifiable {
     /// Present on a solo install, where the request applies at this time.
     let deadline: Date?
 
-    var pending: Bool { !applied && outcome != .denied }
+    var pending: Bool { !applied && outcome != .denied && outcome != .cancelled }
 
     var status: String {
         switch outcome {
@@ -52,6 +52,7 @@ struct SiteRemovalRequest: Decodable, Identifiable {
         case .approved: return applied ? "Approved and applied" : "Approved, awaiting application"
         case .timedOut: return applied ? "Applied after seven days" : "Deadline passed, awaiting application"
         case .denied: return "Denied"
+        case .cancelled: return "Cancelled: a partner was added"
         }
     }
 }
@@ -126,7 +127,20 @@ final class SiteBlockModel: ObservableObject {
         busy = false
     }
 
+    /// When this app uses a partner service, the installed service must know before any solo
+    /// deadline can pass. Retried on every request read until the service confirms it.
+    private static var partnerPairingRecorded = false
+
+    static func recordPartnerPairing() async {
+        guard SetupPartners.usesPartnerService, !partnerPairingRecorded else { return }
+        let result = await Task.detached(priority: .userInitiated) {
+            SiteBlockCommand.run(["record-partner-pairing"])
+        }.value
+        partnerPairingRecorded = result?.status == 0
+    }
+
     private func readRequests() async {
+        await Self.recordPartnerPairing()
         let result = await Task.detached(priority: .userInitiated) {
             SiteBlockCommand.run(["site-removals"])
         }.value
