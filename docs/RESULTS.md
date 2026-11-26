@@ -308,6 +308,7 @@ Issue #76, same clone and fixtures as the #73 run above, build `869bf90`. The Ta
 | VPN sends lookups through Clearpath | Pass | `status`: `defaultResolverReachesFilter: true`. The check name crossed the stand-in to `127.0.0.1` and never reached the router. The panel showed **Protection is on through your VPN** with the green check, and the setup window "DNS filtering is on through your VPN. The community blocklist has not been verified." (this install had no community list). |
 | VPN bypasses Clearpath | Pass | The stand-in was restarted to use the router as its own DNS. `status`: `defaultResolverReachesFilter: false`; `adult.example` resolved through the VPN, so the bypass was real. The panel showed **Your VPN is bypassing Clearpath** in orange with "Sites aren’t filtered while your VPN answers lookups itself. Turn off your VPN’s DNS setting to turn protection back on." |
 | Back through Clearpath | Pass | With the stand-in forwarding to Clearpath again, the panel returned to **Protection is on through your VPN** within one poll. |
+| Neutral check name | Pass | Build `f53a8ff` renamed the check suffix to `resolver-check.example`. `status` reported true through the stand-in and false with it bypassing; the bypassing stand-in's resolver saw only `…resolver-check.example`. |
 | Cleanup | Pass | Uninstall removed Clearpath's files; Ethernet DNS went back to automatic and `scutil --dns` matched the baseline. |
 
 **Not shown here:** a real Tailscale client, and the headline's width: "Protection is on through your VPN" wraps onto two lines in the panel.
