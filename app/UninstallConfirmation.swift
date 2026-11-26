@@ -1,12 +1,18 @@
 struct UninstallConfirmation {
-    static let sentence = "I understand my partner will be notified"
+    /// The partner sentence, which stays the default when the mode is unknown.
+    static let sentence = PartnerWording.partnerUninstallSentence
+    let sentence: String
     private(set) var text = ""
     private var deadline: ContinuousClock.Instant?
+
+    init(sentence: String = UninstallConfirmation.sentence) {
+        self.sentence = sentence
+    }
 
     mutating func update(_ text: String, at now: ContinuousClock.Instant) {
         guard !self.text.utf8.elementsEqual(text.utf8) else { return }
         self.text = text
-        deadline = text.utf8.elementsEqual(Self.sentence.utf8) ? now + .seconds(60) : nil
+        deadline = text.utf8.elementsEqual(sentence.utf8) ? now + .seconds(60) : nil
     }
 
     func allowsAuthorization(at now: ContinuousClock.Instant) -> Bool {
