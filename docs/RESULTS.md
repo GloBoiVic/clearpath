@@ -180,12 +180,12 @@ Every guest administrator prompt, `sudo`, DNS change, profile, public lookup and
 | SafeSearch DNS | Pass, one gap | `www.google.com` and `google.com` → `forcesafesearch.google.com`. `www.bing.com` and `bing.com` → `strict.bing.com`. `duckduckgo.com` → `safe.duckduckgo.com`. **`www.duckduckgo.com` → SERVFAIL (#60)**: it is a CNAME of `duckduckgo.com` and the default policy doesn't map it, so the filter fails closed. |
 | Add a block from the menu bar | Pass | **Block a site** → `example.org`. About a second later `example.org` and `www.example.org` went from NOERROR to NXDOMAIN. The block survived a power loss and a reboot. |
 | **Removal request (solo seven-day rule)** | **Fail (#59)** | The panel showed **Pending requests: Unavailable**. **Request removal** created nothing, and `clearpath-service request-site-removal` said "Site removal requests need a configured pairing service." (exit 2). The block stayed. |
-| Scoped resolver (VPN stand-in) | Pass | A supplemental `vpn.example` resolver pointed at a guest fixture on `[::1]:5354`. Names resolved through it via the system resolver and through the filter (UDP, TCP, AAAA), and the fixture saw no other names. With the fixture stopped, the filter answered SERVFAIL. The scope was removed afterwards and `scutil --dns` matched the post-install state. |
-| Local networking | Pass | A page on `localhost`, `127.0.0.1` and `[::1]:8000` loaded in all three browsers. `dns-sd` registered, browsed and resolved a `.local` service, and the page loaded by the `.local` host name. |
+| Scoped resolver (VPN stand-in) | Pass | A supplemental `vpn.example` resolver pointed at a guest fixture on `[::1]:5354`. Names resolved through it via the system resolver and through the filter (A over UDP and TCP; the AAAA query reached the fixture and returned NOERROR with no record, as the fixture has none), and the fixture saw no other names. With the fixture stopped, the filter answered SERVFAIL. The scope was removed afterwards and `scutil --dns` matched the post-install state. |
+| Local networking | Pass | A page on `localhost`, `127.0.0.1` and `[::1]:8000` loaded in all three browsers (Safari's captures were in a private window). `dns-sd` registered, browsed and resolved a `.local` service, and the page loaded by the `.local` host name. |
 | Developer smoke | Pass | `git ls-remote` over HTTPS, `pip download six` and `npm view` / `npm pack is-number` worked through the filter. Docker, databases, SSH and hot reload weren't available or weren't run. |
 | Network change | Pass | Ethernet off: lookups SERVFAIL. Ethernet on: answered again within about 2 s from the same filter PID, still blocking. |
 | Filter killed | Pass | `kill -9`: a new filter (as `nobody`) answered within about 0.2 s, with blocking and SafeSearch intact. The panel stayed **Protection is on**. |
-| Sleep and wake | Not verifiable | The guest refused `pmset sleepnow` (`0xe00002e2`), as in #10. `tart suspend` worked, but the saved state couldn't be restored ("invalid argument") because the clone wasn't started with `--suspendable`. |
+| Sleep and wake | Not verifiable | The guest refused `pmset sleepnow` with `Unable to sleep system: error 0xe00002e2`, as in #10. `tart suspend` worked, but the saved state couldn't be restored ("invalid argument") because the clone wasn't started with `--suspendable`. |
 | Power loss | Pass | The unrestorable saved state was discarded, so the guest cold-booted. The filter started 6 s after boot and the app 22 s after, with DNS still `127.0.0.1` and blocking, the custom block and SafeSearch working. |
 | Reboot | Pass | After `sudo reboot`: filter 6 s after boot, app 21 s after, same checks passed. |
 | Restore internet | Pass | Replaced `policy.json` with invalid JSON and killed the filter. launchd kept retrying (exit 1) and the panel showed **Protection is offline** with **Restore internet**. One administrator prompt then restored DNS. The panel showed **Previous DNS settings restored / DNS filtering is off**, and both the network-service DNS and `scutil --dns` matched the pre-install baseline exactly. A repeated restore kept the same event ID. |
@@ -208,13 +208,16 @@ If something goes wrong, use the first step that works:
 
 1. **Protection is offline and the internet is down:** shield → **Restore internet**, then approve the administrator prompt. DNS goes back to the saved settings, and Clearpath stays installed but stops filtering. (Proven above.)
 2. **To remove Clearpath:** shield → **Leave Clearpath**. Type the sentence, wait 60 seconds, choose **Uninstall now** and approve the prompt. If it asks, remove **Clearpath Browser Policies** in System Settings → General → Device Management, then choose **Check profile and continue**. Restart Chrome and Firefox. (Proven above and in #23.)
-3. **If the app itself won't help**, in Terminal:
-   - restore each service's DNS from `/Library/Application Support/Clearpath/recovery.json` with `sudo networksetup -setdnsservers "<service>" <saved servers>`, or `Empty` if it was automatic;
-   - `sudo launchctl bootout system/io.clearpath.filter`, then the same for `io.clearpath.community-list` and `io.clearpath.site-blocks`;
-   - delete their plists from `/Library/LaunchDaemons`, then `/Library/Application Support/Clearpath` and `/Applications/Clearpath.app`;
-   - remove **Clearpath Browser Policies** in Device Management and Clearpath from Login Items.
+3. **If the app itself won't help**, use the installed service tool in Terminal:
 
-   This step is documented in [TESTING.md](TESTING.md#filter-service-install-and-rollback-in-the-vm) but wasn't run in this VM.
+   ```sh
+   sudo "/Library/Application Support/Clearpath/clearpath-service" restore     # DNS back only, while the filter is down; Clearpath stays installed
+   sudo "/Library/Application Support/Clearpath/clearpath-service" uninstall   # DNS back, then the filter and its jobs removed
+   ```
+
+   `uninstall` restores DNS from `recovery.json` and waits until macOS stops using `127.0.0.1`. Only then does it stop the three jobs and remove Clearpath's own files. After it, drag `/Applications/Clearpath.app` to the Trash. Then remove **Clearpath Browser Policies** in Device Management and Clearpath from Login Items, and restart Chrome and Firefox. These commands are the ones the app runs. #9 proved `clearpath-service uninstall` in a VM ([Filter service in a disposable VM](#filter-service-in-a-disposable-vm--2026-11-21)); this run didn't call them by hand.
+
+   Last resort, only if that tool is missing or refuses: set each service back to automatic DNS, `sudo networksetup -setdnsservers "Wi-Fi" Empty` (repeat with each name from `networksetup -listallnetworkservices` that shows `127.0.0.1`). Then ask for help before deleting anything.
 4. **Check:** compare `scutil --dns` with `~/Desktop/clearpath-dns-before.txt`, and confirm that ordinary sites load.
 
 Each of these steps on Victor's Mac is a Hard stop: he runs it himself after saying yes in chat.
