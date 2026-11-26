@@ -110,6 +110,24 @@ final class ResolverTests: XCTestCase {
         XCTAssertEqual(notices.read(), 2)
     }
 
+    func testCheckNamesAreAnsweredByTheFilterWithItsMarkerAndNeverForwarded() async throws {
+        // #76: a VPN in front of Clearpath proves it forwards to Clearpath when this marker comes back.
+        let notices = LockedValue(0)
+        let resolver = Resolver(policy: try examplePolicy(), onBlocked: { notices.update { $0 += 1 } }), fixture = Fixture()
+        for tcp in [false, true] {
+            let check = try DNSMessage(await resolver.resolve(DNSMessage.query("3f9a1c.Clearpath-Check.example", type: 16), tcp: tcp, upstream: fixture))
+            XCTAssertEqual(check.rcode, 0)
+            XCTAssertEqual(check.answers.map(\.type), [16])
+            XCTAssertEqual(check.answers.first?.data, FilterCheck.marker)
+            XCTAssertEqual(check.answers.first?.ttl, 0)
+            let other = try DNSMessage(await resolver.resolve(DNSMessage.query("3f9a1c.clearpath-check.example", type: 1), tcp: tcp, upstream: fixture))
+            XCTAssertEqual(other.rcode, 0); XCTAssertTrue(other.answers.isEmpty)
+        }
+        let calls = await fixture.calls; XCTAssertTrue(calls.isEmpty)
+        XCTAssertEqual(notices.read(), 0)
+        XCTAssertEqual(FilterCheck.marker, [9] + Array("clearpath".utf8))
+    }
+
     func testBlockedDomainsNeverReachUpstream() async throws {
         let resolver = Resolver(policy: try examplePolicy()), fixture = Fixture()
         for host in ["adult.example", "sub.adult.example", "blocked.example", "pornhub.com"] {

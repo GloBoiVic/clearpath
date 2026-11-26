@@ -189,6 +189,25 @@ final class TransportTests: XCTestCase {
         XCTAssertFalse(MacSystem.resolves(through: network(router.port, ethernetActive: false).networkResolver()))
     }
 
+    func testTheBypassCheckTellsClearpathsAnswerFromAVPNsOwnAndFromNoAnswer() throws {
+        // Through Clearpath: the real resolver logic answers the check name.
+        struct ThroughClearpath: DNSUpstream {
+            let resolver: Resolver
+            func exchange(_ packet: [UInt8], tcp: Bool) async throws -> [UInt8] {
+                await resolver.resolve(packet, tcp: tcp, upstream: NetworkUpstream(endpoint: .hostPort(host: "192.0.2.1", port: 53)))
+            }
+        }
+        let policy = try Policy(data: Data(contentsOf: repository.appendingPathComponent("policy.example.json")))
+        XCTAssertEqual(MacSystem.filterCheck(through: ThroughClearpath(resolver: Resolver(policy: policy))), true)
+        // A VPN answering by itself (this fixture answers every question with an A record).
+        let vpn = try LocalDNSServer(tcp: false)
+        defer { vpn.stop() }
+        XCTAssertEqual(MacSystem.filterCheck(through: NetworkUpstream(endpoint: .hostPort(host: "127.0.0.1", port: vpn.port))), false)
+        let silent = try LocalDNSServer(tcp: false, silent: true)
+        defer { silent.stop() }
+        XCTAssertNil(MacSystem.filterCheck(through: NetworkUpstream(endpoint: .hostPort(host: "127.0.0.1", port: silent.port), timeout: 0.5)))
+    }
+
     func testPrivateTCPRetryUsesTheSameScopeWhenTheNetworkChanges() async throws {
         let standard = try LocalDNSServer(tcp: true)
         defer { standard.stop() }

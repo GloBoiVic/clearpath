@@ -1,6 +1,7 @@
 import Foundation
 import SystemConfiguration
 import ClearpathCore
+import ClearpathNetwork
 
 /// The macOS tools the service manager drives, by absolute path so `PATH` cannot swap them.
 public enum Tool: String, Sendable {
@@ -40,6 +41,9 @@ public protocol SystemControl {
     /// True when the resolvers Restore internet would hand back (each recorded service's saved
     /// or negotiated DNS) answer the same lookup directly within two seconds.
     func networkResolves(_ record: RecoveryRecord) -> Bool
+    /// Asks the first of these resolvers that answers for a fresh check name: true when the
+    /// answer carries Clearpath's marker, false for any other answer, nil when none answers.
+    func reachesFilter(through servers: [String]) -> Bool?
     func pause(seconds: Double)
 }
 
@@ -136,6 +140,34 @@ public struct MacSystem: SystemControl {
         return Self.resolves(through: network.networkResolver())
     }
 
+    public func reachesFilter(through servers: [String]) -> Bool? {
+        let hosts = servers.compactMap { NetworkDNS.resolverHost($0) }
+        guard !hosts.isEmpty else { return nil }
+        for host in hosts {
+            let upstream = NetworkUpstream(endpoint: .hostPort(host: host, port: 53), timeout: 2 / Double(hosts.count))
+            if let answer = Self.filterCheck(through: upstream) { return answer }
+        }
+        return nil
+    }
+
+    /// One TXT lookup of a fresh name under `FilterCheck.suffix`: true when Clearpath's marker
+    /// comes back, false for any other valid answer, nil for no answer within three seconds.
+    static func filterCheck(through upstream: any DNSUpstream) -> Bool? {
+        let label = (0..<6).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
+        guard let query = try? DNSMessage(DNSMessage.query(label + "." + FilterCheck.suffix, type: 16)) else { return nil }
+        let result = Outcome()
+        let done = DispatchSemaphore(value: 0)
+        Task {
+            if let wire = try? await upstream.exchange(query.wire, tcp: false), let response = try? DNSMessage(wire),
+               (try? response.validateResponse(to: query)) != nil {
+                result.set(response.answers.contains { $0.type == 16 && $0.data == FilterCheck.marker })
+            }
+            done.signal()
+        }
+        guard done.wait(timeout: .now() + 3) == .success else { return nil }
+        return result.value
+    }
+
     /// The `com` name servers answered with NOERROR within three seconds.
     static func resolves(through upstream: any DNSUpstream) -> Bool {
         guard let query = try? DNSMessage(DNSMessage.query("com", type: 2)) else { return false }
@@ -176,4 +208,11 @@ private final class Answered: @unchecked Sendable {
     private var answered = false
     var value: Bool { lock.lock(); defer { lock.unlock() }; return answered }
     func set() { lock.lock(); answered = true; lock.unlock() }
+}
+
+private final class Outcome: @unchecked Sendable {
+    private let lock = NSLock()
+    private var answer: Bool?
+    var value: Bool? { lock.lock(); defer { lock.unlock() }; return answer }
+    func set(_ value: Bool) { lock.lock(); answer = value; lock.unlock() }
 }
