@@ -41,8 +41,8 @@ public protocol SystemControl {
     /// True when the resolvers Restore internet would hand back (each recorded service's saved
     /// or negotiated DNS) answer the same lookup directly within two seconds.
     func networkResolves(_ record: RecoveryRecord) -> Bool
-    /// Asks the first of these resolvers that answers for a fresh check name: true when the
-    /// answer carries Clearpath's marker, false for any other answer, nil when none answers.
+    /// Asks each of these resolvers, except Clearpath's own listener, for a fresh check name: true
+    /// when every answer carries Clearpath's marker, false when any doesn't, nil when none answers.
     func reachesFilter(through servers: [String]) -> Bool?
     func pause(seconds: Double)
 }
@@ -141,13 +141,23 @@ public struct MacSystem: SystemControl {
     }
 
     public func reachesFilter(through servers: [String]) -> Bool? {
-        let hosts = servers.compactMap { NetworkDNS.resolverHost($0) }
-        guard !hosts.isEmpty else { return nil }
-        for host in hosts {
-            let upstream = NetworkUpstream(endpoint: .hostPort(host: host, port: 53), timeout: 2 / Double(hosts.count))
-            if let answer = Self.filterCheck(through: upstream) { return answer }
-        }
-        return nil
+        let hosts = Self.checkedServers(servers).compactMap { NetworkDNS.resolverHost($0) }
+        return Self.filterCheck(through: hosts.map {
+            NetworkUpstream(endpoint: .hostPort(host: $0, port: 53), timeout: 2 / Double(hosts.count))
+        })
+    }
+
+    /// The default resolver's servers other than Clearpath's own listener, which would vouch for itself.
+    static func checkedServers(_ servers: [String]) -> [String] {
+        let own = NetworkDNS.resolverHost(ServiceManager.listenAddress)
+        return servers.filter { text in NetworkDNS.resolverHost(text).map { $0 != own } ?? false }
+    }
+
+    /// Every server is asked. True only when each one that answers returns Clearpath's marker;
+    /// one answer without it is a bypass; no answers at all leave the state unknown.
+    static func filterCheck(through upstreams: [any DNSUpstream]) -> Bool? {
+        let answers = upstreams.compactMap { filterCheck(through: $0) }
+        return answers.isEmpty ? nil : !answers.contains(false)
     }
 
     /// One TXT lookup of a fresh name under `FilterCheck.suffix`: true when Clearpath's marker
